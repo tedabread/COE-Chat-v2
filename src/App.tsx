@@ -22,6 +22,7 @@ export default function App() {
         <Route path="/signup" element={<GuestRoute><Signup /></GuestRoute>} />
         <Route path="/" element={<AuthGuard><Home /></AuthGuard>} />
         <Route path="/chat/:id" element={<AuthGuard><ChatPage /></AuthGuard>} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <DebugConsole />
     </BrowserRouter>
