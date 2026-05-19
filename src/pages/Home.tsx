@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../hooks/useAuth'
 import { useFriends, ensureDmExists } from '../hooks/useFriends'
@@ -27,9 +27,35 @@ export function Home() {
   const [confirmRemove, setConfirmRemove] = useState<Profile | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const navigate = useNavigate()
+  const { id: chatIdParam } = useParams<{ id: string }>()
 
   const call = useCall(user?.id, activeChatId ?? undefined, activeFriend?.id)
   const { userStatuses } = usePresence(user?.id)
+
+  useEffect(() => {
+    if (!chatIdParam || !user) return
+    const cid = Number(chatIdParam)
+    if (!cid || cid === activeChatId) return
+    ;(async () => {
+      const { data } = await supabase
+        .from('chat_members')
+        .select('user_id')
+        .eq('chat_id', cid)
+      if (!data) return
+      const otherId = data.find((m) => m.user_id !== user.id)?.user_id
+      if (!otherId) return
+      const { data: other } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', otherId)
+        .single()
+      if (other) {
+        setActiveFriendId(other.id)
+        setActiveFriend(other)
+        setActiveChatId(cid)
+      }
+    })()
+  }, [chatIdParam, user])
 
   useEffect(() => {
     if (!user) return
@@ -65,8 +91,8 @@ export function Home() {
       const chatId = await ensureDmExists(user!.id, friend.id)
       if (chatId) {
         setActiveChatId(chatId)
+        navigate(`/chat/${chatId}`, { replace: true })
       }
-      window.history.replaceState(null, '', `/${friend.uid}`)
     } catch (err) {
       console.error('Error in openDm:', err)
     }
@@ -76,7 +102,7 @@ export function Home() {
     setActiveChatId(null)
     setActiveFriendId(null)
     setActiveFriend(null)
-    window.history.replaceState(null, '', '/')
+    navigate('/', { replace: true })
   }
 
   async function handleSignOut() {
