@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../hooks/useAuth'
 import { useFriends, ensureDmExists } from '../hooks/useFriends'
@@ -10,7 +11,6 @@ import type { Profile } from '../types'
 import { FriendSearch } from '../components/FriendSearch'
 import { FriendRequests } from '../components/FriendRequests'
 import { ChatView } from '../components/ChatView'
-import { SettingsView } from '../components/SettingsView'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Icon } from '../components/Icon'
 import { AdminBadge } from '../components/AdminBadge'
@@ -23,10 +23,10 @@ export function Home() {
   const [activeFriendId, setActiveFriendId] = useState<string | null>(null)
   const [activeFriend, setActiveFriend] = useState<Profile | null>(null)
   const [activeChatId, setActiveChatId] = useState<number | null>(null)
-  const [showSettings, setShowSettings] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState<Profile | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const navigate = useNavigate()
 
   const call = useCall(user?.id, activeChatId ?? undefined, activeFriend?.id)
   const { userStatuses } = usePresence(user?.id)
@@ -61,12 +61,12 @@ export function Home() {
   async function openDm(friend: Profile) {
     setActiveFriendId(friend.id)
     setActiveFriend(friend)
-    setShowSettings(false)
     try {
       const chatId = await ensureDmExists(user!.id, friend.id)
       if (chatId) {
         setActiveChatId(chatId)
       }
+      window.history.replaceState(null, '', `/${friend.uid}`)
     } catch (err) {
       console.error('Error in openDm:', err)
     }
@@ -76,6 +76,12 @@ export function Home() {
     setActiveChatId(null)
     setActiveFriendId(null)
     setActiveFriend(null)
+    window.history.replaceState(null, '', '/')
+  }
+
+  async function handleSignOut() {
+    await signOut()
+    navigate('/login')
   }
 
   function handleRemoveFriend(friend: Profile) {
@@ -165,7 +171,7 @@ export function Home() {
               <button className={`sidebar-icon-btn${call.isMuted ? ' muted' : ''}`} onClick={call.toggleMute} title={call.isMuted ? 'Unmute' : 'Mute'}>
                 <Icon name={call.isMuted ? 'mic_off' : 'mic'} />
               </button>
-              <button className="sidebar-icon-btn" onClick={signOut}>
+              <button className="sidebar-icon-btn" onClick={handleSignOut}>
                 <Icon name="logout" />
               </button>
               {isAdmin && (
@@ -174,7 +180,7 @@ export function Home() {
                 </button>
               )}
             </span>
-            <button className="sidebar-icon-btn" onClick={() => setShowSettings(true)}>
+            <button className="sidebar-icon-btn" onClick={() => navigate('/settings')}>
               <Icon name="settings" />
             </button>
           </div>
@@ -202,14 +208,6 @@ export function Home() {
           </div>
         )}
       </main>
-
-      {showSettings && profile && (
-        <SettingsView
-          profile={profile}
-          onClose={() => setShowSettings(false)}
-          onProfileUpdate={(p) => setProfile(p)}
-        />
-      )}
 
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
 
