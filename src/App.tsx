@@ -4,6 +4,8 @@ import { Login } from './pages/Login'
 import { Signup } from './pages/Signup'
 import { Home } from './pages/Home'
 import { ChatPage } from './pages/Chat'
+import { SettingsPage } from './pages/SettingsPage'
+import { UserRedirect } from './pages/UserRedirect'
 import { useAuth } from './hooks/useAuth'
 import { DebugConsole } from './components/DebugConsole'
 
@@ -22,6 +24,8 @@ export default function App() {
         <Route path="/signup" element={<GuestRoute><Signup /></GuestRoute>} />
         <Route path="/" element={<AuthGuard><Home /></AuthGuard>} />
         <Route path="/chat/:id" element={<AuthGuard><ChatPage /></AuthGuard>} />
+        <Route path="/settings" element={<AuthGuard><SettingsPage /></AuthGuard>} />
+        <Route path="/:identifier" element={<AuthGuard><UserRedirect /></AuthGuard>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <DebugConsole />
