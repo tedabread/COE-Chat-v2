@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient'
 import { useAuth } from '../hooks/useAuth'
 import { ensureDmExists } from '../hooks/useFriends'
 import type { Profile } from '../types'
+import { signalAppReady } from '../appReady'
 
 export function UserRedirect() {
   const { identifier } = useParams<{ identifier: string }>()
@@ -13,6 +14,7 @@ export function UserRedirect() {
 
   useEffect(() => {
     if (!identifier || !user) return
+    signalAppReady()
 
     const isNumeric = /^\d+$/.test(identifier)
 

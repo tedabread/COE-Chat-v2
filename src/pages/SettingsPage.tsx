@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient'
 import { useAuth } from '../hooks/useAuth'
 import { SettingsView } from '../components/SettingsView'
 import type { Profile } from '../types'
+import { signalAppReady } from '../appReady'
 
 export function SettingsPage() {
   const { user } = useAuth()
@@ -19,6 +20,7 @@ export function SettingsPage() {
       .single()
       .then(({ data }) => {
         if (data) setProfile(data)
+        signalAppReady()
       })
   }, [user])
 

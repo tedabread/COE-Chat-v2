@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../hooks/useAuth'
@@ -15,10 +15,11 @@ import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Icon } from '../components/Icon'
 import { AdminBadge } from '../components/AdminBadge'
 import { AdminPanel } from '../components/AdminPanel'
+import { signalAppReady } from '../appReady'
 
 export function Home() {
   const { user, signOut } = useAuth()
-  const { friends, removeFriend, refetch: refetchFriends } = useFriends(user?.id)
+  const { friends, loading: friendsLoading, removeFriend, refetch: refetchFriends } = useFriends(user?.id)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [activeFriendId, setActiveFriendId] = useState<string | null>(null)
   const [activeFriend, setActiveFriend] = useState<Profile | null>(null)
@@ -57,6 +58,8 @@ export function Home() {
     })()
   }, [chatIdParam, user])
 
+  const profileFetchedRef = useRef(false)
+
   useEffect(() => {
     if (!user) return
     supabase
@@ -69,8 +72,15 @@ export function Home() {
           setProfile(data)
           if (data.role === 'admin') setIsAdmin(true)
         }
+        profileFetchedRef.current = true
       })
   }, [user])
+
+  useEffect(() => {
+    if (!friendsLoading && profileFetchedRef.current) {
+      signalAppReady()
+    }
+  }, [friendsLoading, profile])
 
   useEffect(() => {
     if (profile?.name_font) loadFont(profile.name_font)
