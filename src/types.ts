@@ -48,9 +48,65 @@ export interface Call {
   ended_at: string | null
 }
 
+export interface Server {
+  id: number
+  name: string
+  owner_id: string
+  icon_url: string | null
+  banner_color: string | null
+  created_at: string
+}
+
+export interface ServerRole {
+  id: number
+  server_id: number
+  name: string
+  color: string | null
+  permissions: ServerPermissions
+  position: number
+  created_at: string
+}
+
+export interface ServerPermissions {
+  manage_messages: boolean
+  manage_channels: boolean
+  manage_server: boolean
+  kick_members: boolean
+  ban_members: boolean
+  manage_roles: boolean
+}
+
+export interface ServerMember {
+  id: number
+  server_id: number
+  user_id: string
+  role_id: number | null
+  joined_at: string
+  profile?: Profile
+  role?: ServerRole
+}
+
+export interface Channel {
+  id: number
+  server_id: number
+  name: string
+  type: 'text' | 'voice'
+  position: number
+  created_at: string
+}
+
+export interface VoiceParticipant {
+  id: number
+  channel_id: number
+  user_id: string
+  joined_at: string
+  profile?: Profile
+}
+
 export interface Message {
   id: number
   chat_id: number
+  channel_id: number | null
   sender_id: string
   content: string
   file_url: string | null
@@ -58,6 +114,8 @@ export interface Message {
   file_type: string | null
   file_size: number | null
   reply_to: number | null
+  edited: boolean
+  updated_at: string | null
   created_at: string
   profile?: Profile
 }

@@ -1,3 +1,9 @@
-export function AdminBadge() {
-  return <span className="admin-badge-a">ADM</span>
+import { RoleBadge } from './RoleBadge'
+
+interface Props {
+  role?: string | null
+}
+
+export function AdminBadge({ role }: Props) {
+  return <RoleBadge role={role} />
 }

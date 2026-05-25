@@ -1,23 +1,44 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useLocation } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../hooks/useAuth'
 import { ensureDmExists } from '../hooks/useFriends'
+import { isServerMember, joinServer } from '../hooks/useServers'
 import type { Profile } from '../types'
 import { signalAppReady } from '../appReady'
 
 export function UserRedirect() {
-  const { identifier } = useParams<{ identifier: string }>()
+  const params = useParams()
   const { user } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [error, setError] = useState<string | null>(null)
 
+  const isInvite = location.pathname.startsWith('/invite/')
+  const identifier = params.identifier || params.serverId
+
   useEffect(() => {
-    if (!identifier || !user) return
+    if (!user || !identifier) return
     signalAppReady()
 
-    const isNumeric = /^\d+$/.test(identifier)
+    if (isInvite) {
+      const sid = Number(identifier)
+      if (!sid) { setError('Invalid invite link'); return }
 
+      supabase.from('servers').select('id').eq('id', sid).single().then(async ({ data }) => {
+        if (!data) { setError('Server not found'); return }
+        const member = await isServerMember(sid, user.id)
+        if (!member) {
+          const joined = await joinServer(sid, user.id)
+          if (!joined) { setError('Could not join server'); return }
+        }
+        navigate(`/server/${sid}`, { replace: true })
+      })
+      return
+    }
+
+    const isNumeric = /^\d+$/.test(identifier)
     const query = isNumeric
       ? supabase.from('profiles').select('*').eq('uid', identifier).single()
       : supabase.from('profiles').select('*').eq('username', identifier).single()
@@ -42,7 +63,7 @@ export function UserRedirect() {
         setError('Could not create conversation')
       }
     })
-  }, [identifier, user, navigate])
+  }, [identifier, user, navigate, isInvite])
 
   if (error) {
     return (
@@ -53,5 +74,5 @@ export function UserRedirect() {
     )
   }
 
-  return <div className="loading-screen">Looking up user...</div>
+  return <div className="loading-screen">{isInvite ? 'Joining server...' : 'Looking up user...'}</div>
 }

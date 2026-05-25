@@ -3106,3 +3106,425 @@ body {
   color: var(--blue);
   border-bottom-color: var(--blue);
 }
+
+/* ── Role Badges ────────────────────────────────────────── */
+
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.55rem;
+  font-weight: 700;
+  padding: 0.05rem 0.25rem;
+  border-radius: 3px;
+  margin-left: 0.2rem;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+.role-badge-owner {
+  background: var(--yellow);
+  color: var(--base);
+}
+
+.role-badge-admin {
+  background: var(--mauve);
+  color: var(--base);
+}
+
+.role-badge-mod {
+  background: var(--blue);
+  color: var(--base);
+}
+
+/* ── Server Bar ─────────────────────────────────────────── */
+
+.server-bar {
+  width: 60px;
+  min-width: 60px;
+  background: var(--crust);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.6rem 0;
+  gap: 0.4rem;
+  border-right: 1px solid var(--surface0);
+  overflow-y: auto;
+}
+
+.server-bar-top {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.server-bar-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.server-icon-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-radius 0.15s, background 0.15s;
+  background: var(--surface0);
+  color: var(--overlay1);
+  font-size: 1.1rem;
+  overflow: hidden;
+}
+
+.server-icon-wrap:hover {
+  border-radius: 30%;
+  background: var(--surface1);
+  color: var(--text);
+}
+
+.server-icon-wrap.active {
+  border-radius: 30%;
+  background: var(--blue);
+  color: var(--base);
+}
+
+.server-icon-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.server-icon-default {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--green);
+}
+
+.server-icon-wrap.active .server-icon-default {
+  color: var(--base);
+}
+
+.server-divider {
+  width: 32px;
+  height: 2px;
+  background: var(--surface0);
+  border-radius: 1px;
+  margin: 0.2rem 0;
+}
+
+.dm-icon {
+  font-size: 1.2rem;
+}
+
+.add-server {
+  color: var(--green);
+}
+
+.add-server:hover {
+  background: var(--green);
+  color: var(--base);
+}
+
+/* ── Channel List ───────────────────────────────────────── */
+
+.channel-sidebar {
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--mantle);
+  border-right: 1px solid var(--surface0);
+}
+
+.channel-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.channel-list-header {
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid var(--surface0);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.channel-server-name {
+  font-weight: 700;
+  font-size: 1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.channel-settings-btn {
+  background: none;
+  border: none;
+  color: var(--overlay0);
+  cursor: pointer;
+  padding: 0.2rem;
+  font-size: 1rem;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+
+.channel-settings-btn:hover {
+  color: var(--text);
+}
+
+.channel-list-section {
+  padding: 0.5rem 0;
+}
+
+.channel-section-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--overlay0);
+  padding: 0.3rem 1rem;
+}
+
+.channel-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 1rem;
+  cursor: pointer;
+  color: var(--overlay0);
+  font-size: 0.85rem;
+  transition: background 0.15s, color 0.15s;
+  border-radius: 0;
+}
+
+.channel-item:hover {
+  background: var(--surface0);
+  color: var(--text);
+}
+
+.channel-item.active {
+  background: var(--surface0);
+  color: var(--text);
+}
+
+.channel-hash {
+  font-weight: 700;
+  color: var(--overlay1);
+  font-size: 0.9rem;
+}
+
+.channel-item.active .channel-hash {
+  color: var(--text);
+}
+
+.channel-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-item.voice-channel {
+  color: var(--overlay0);
+}
+
+.channel-item.voice-channel.in-voice {
+  color: var(--green);
+}
+
+.voice-count {
+  margin-left: auto;
+  font-size: 0.75rem;
+  background: var(--surface0);
+  padding: 0.05rem 0.4rem;
+  border-radius: 8px;
+  color: var(--subtext0);
+}
+
+/* ── Create Server Form ─────────────────────────────────── */
+
+.create-server-form {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.create-server-form label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.create-server-form input {
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  border: 1px solid var(--surface0);
+  background: var(--base);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+
+.create-server-form button {
+  padding: 0.6rem;
+  border-radius: 6px;
+  border: none;
+  background: var(--blue);
+  color: var(--base);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.create-server-form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Chat channel header ────────────────────────────────── */
+
+.chat-channel-hash {
+  margin-right: 0.3rem;
+}
+
+.chat-channel-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+/* ── Message edit & actions ─────────────────────────────── */
+
+.msg-edit-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.3rem 0;
+}
+
+.msg-edit-box input {
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--surface0);
+  background: var(--base);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+
+.msg-edit-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.msg-edit-actions button {
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  border: none;
+  background: var(--surface0);
+  color: var(--text);
+  font-size: 0.75rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.msg-edit-actions button:first-child {
+  background: var(--blue);
+  color: var(--base);
+}
+
+.msg-edited {
+  font-size: 0.65rem;
+  color: var(--overlay0);
+  margin-left: 0.3rem;
+}
+
+.msg-actions-row {
+  display: flex;
+  gap: 0.2rem;
+  margin-top: 0.15rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.msg-row:hover .msg-actions-row {
+  opacity: 1;
+}
+
+.msg-actions-row .msg-reply-btn {
+  background: none;
+  border: none;
+  color: var(--overlay1);
+  cursor: pointer;
+  padding: 0.15rem;
+  font-size: 0.7rem;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.msg-actions-row .msg-reply-btn:hover {
+  background: var(--surface0);
+  color: var(--text);
+}
+
+/* ── Voice channel overlay ──────────────────────────────── */
+
+.voice-overlay {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 1000;
+  background: var(--mantle);
+  border: 1px solid var(--surface0);
+  border-radius: 10px;
+  padding: 0.8rem 1.2rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+.voice-overlay-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.voice-overlay-channel {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.voice-overlay-status {
+  font-size: 0.75rem;
+  color: var(--green);
+}
+
+.voice-overlay-btn {
+  background: var(--red);
+  border: none;
+  color: var(--base);
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+  font-weight: 600;
+}
+
+.voice-overlay-btn:hover {
+  opacity: 0.85;
+}

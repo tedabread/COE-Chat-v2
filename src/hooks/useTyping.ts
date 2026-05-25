@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient'
 const TYPING_TIMEOUT = 3000
 const TYPING_HEARTBEAT = 2000
 
-export function useTyping(chatId: number | undefined, userId: string | undefined) {
+export function useTyping(chatId: number | undefined, userId: string | undefined, prefix: string = 'chat') {
   const [typingUserIds, setTypingUserIds] = useState<string[]>([])
   const timeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
@@ -13,7 +13,7 @@ export function useTyping(chatId: number | undefined, userId: string | undefined
   useEffect(() => {
     if (!chatId || !userId) return
 
-    const channel = supabase.channel(`chat-typing-${chatId}`, {
+    const channel = supabase.channel(`${prefix}-typing-${chatId}`, {
       config: { broadcast: { ack: false, self: false } },
     })
 

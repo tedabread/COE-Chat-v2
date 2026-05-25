@@ -260,7 +260,7 @@ export function AdminPanel({ onClose }: Props) {
                     <span style={{
                       fontFamily: u.name_font ? getFontFamily(u.name_font) : undefined,
                       color: u.name_color || undefined,
-                      ...(u.role === 'admin' ? { textShadow: `1px 0 0.3px ${u.admin_outline_color || '#cba6f7'}, -1px 0 0.3px ${u.admin_outline_color || '#cba6f7'}, 0 1px 0.3px ${u.admin_outline_color || '#cba6f7'}, 0 -1px 0.3px ${u.admin_outline_color || '#cba6f7'}, 1px 1px 0.3px ${u.admin_outline_color || '#cba6f7'}, -1px 1px 0.3px ${u.admin_outline_color || '#cba6f7'}, -1px -1px 0.3px ${u.admin_outline_color || '#cba6f7'}, 1px -1px 0.3px ${u.admin_outline_color || '#cba6f7'}` } : {}),
+                      ...((u.role === 'admin' || u.role === 'owner') ? { textShadow: `1px 0 0.3px ${u.admin_outline_color || '#cba6f7'}, -1px 0 0.3px ${u.admin_outline_color || '#cba6f7'}, 0 1px 0.3px ${u.admin_outline_color || '#cba6f7'}, 0 -1px 0.3px ${u.admin_outline_color || '#cba6f7'}, 1px 1px 0.3px ${u.admin_outline_color || '#cba6f7'}, -1px 1px 0.3px ${u.admin_outline_color || '#cba6f7'}, -1px -1px 0.3px ${u.admin_outline_color || '#cba6f7'}, 1px -1px 0.3px ${u.admin_outline_color || '#cba6f7'}` } : {}),
                     }}>
                       {u.display_name || '-'}
                     </span>
@@ -365,7 +365,7 @@ export function AdminPanel({ onClose }: Props) {
                           <span style={{ fontFamily: sender?.name_font ? getFontFamily(sender.name_font) : undefined, color: sender?.name_color || undefined }}>
                             {sender ? `${sender.display_name || sender.username}#${sender.uid}` : m.sender_id.slice(0, 8)}
                           </span>
-                          {sender?.role === 'admin' && <AdminBadge />}
+                          <AdminBadge role={sender?.role} />
                         </td>
                         <td className="admin-cell-preview">{m.content ? m.content.slice(0, 80) : '(empty)'}{m.content && m.content.length > 80 ? '…' : ''}</td>
                         <td>{m.file_url ? 'Yes' : 'No'}</td>

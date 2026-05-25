@@ -16,24 +16,18 @@ export function useCall(userId: string | undefined, chatId: number | undefined, 
   const [error, setError] = useState<string | null>(null)
 
   const clientRef = useRef<IAgoraRTCClient | null>(null)
-  const localTrackRef = useRef<ILocalAudioTrack | null>(null)
+  const micTrackRef = useRef<ILocalAudioTrack | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const joiningRef = useRef(false)
-  const channelInfoRef = useRef<{ channelName: string; uid: string } | null>(null)
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
   const mutedRef = useRef(false)
   const callIdRef = useRef<number | undefined>(undefined)
+  const callStartRef = useRef<number | undefined>(undefined)
   const [trackedCallId, setTrackedCallId] = useState<number | undefined>(undefined)
 
   const appId = import.meta.env.VITE_AGORA_APP_ID
 
   const cleanup = useCallback(async () => {
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current)
-      reconnectTimerRef.current = null
-    }
     if (idleTimerRef.current) {
       clearTimeout(idleTimerRef.current)
       idleTimerRef.current = null
@@ -42,45 +36,58 @@ export function useCall(userId: string | undefined, chatId: number | undefined, 
       clearInterval(timerRef.current)
       timerRef.current = null
     }
-    if (localTrackRef.current) {
-      localTrackRef.current.close()
-      localTrackRef.current = null
-    }
     if (clientRef.current) {
+      if (micTrackRef.current) {
+        try { await clientRef.current.unpublish(micTrackRef.current) } catch {}
+      }
       try { await clientRef.current.leave() } catch {}
       clientRef.current = null
     }
     joiningRef.current = false
     setElapsed(0)
+    callStartRef.current = undefined
   }, [])
+
+  async function ensureMicTrack() {
+    if (micTrackRef.current) return micTrackRef.current
+    try {
+      const track = await AgoraRTC.createMicrophoneAudioTrack()
+      micTrackRef.current = track
+      setHasMic(true)
+      return track
+    } catch (err) {
+      console.warn('Could not acquire microphone:', err)
+      setHasMic(false)
+      return null
+    }
+  }
+
+  async function startTimer() {
+    setElapsed(0)
+    if (timerRef.current) clearInterval(timerRef.current)
+    timerRef.current = setInterval(() => {
+      if (callStartRef.current) {
+        setElapsed(Math.floor((Date.now() - callStartRef.current) / 1000))
+      }
+    }, 1000)
+  }
 
   async function joinAgora(channelName: string, uid: string) {
     if (joiningRef.current) return
     if (!appId) {
-      setError('Agora App ID is not configured. Set VITE_AGORA_APP_ID in your environment.')
+      setError('Agora App ID is not configured.')
       return
     }
     joiningRef.current = true
     setError(null)
-    channelInfoRef.current = { channelName, uid }
     try {
       if (clientRef.current) {
         try { await clientRef.current.leave() } catch {}
         clientRef.current = null
       }
-      if (localTrackRef.current) {
-        localTrackRef.current.close()
-        localTrackRef.current = null
-      }
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-        timerRef.current = null
-      }
 
-      const client = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' })
+      const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' })
       clientRef.current = client
-      client.startProxyServer(3)
-      await client.setClientRole('host')
 
       client.on('user-published', async (user, mediaType) => {
         try {
@@ -104,60 +111,23 @@ export function useCall(userId: string | undefined, chatId: number | undefined, 
       client.on('connection-state-change', (cur, prev) => {
         console.log('Connection state:', prev, '->', cur)
         if (cur === 'DISCONNECTED' && ['CONNECTED', 'RECONNECTING'].includes(prev)) {
-          const info = channelInfoRef.current
-          if (!info) return
-          if (reconnectTimerRef.current) return
-          console.log('Call disconnected — reconnecting in 2s')
-          reconnectTimerRef.current = setTimeout(() => {
-            reconnectTimerRef.current = null
-            if (!info) return
+          console.log('Call disconnected — rejoining in 2s')
+          setTimeout(() => {
             joiningRef.current = false
-            joinAgora(info.channelName, info.uid)
+            joinAgora(channelName, uid)
           }, 2000)
-        }
-      })
-
-      client.on('user-joined', (remoteUser) => {
-        console.log('Remote user joined:', remoteUser.uid)
-      })
-
-      client.on('user-left', (remoteUser, reason) => {
-        console.log('Remote user left:', remoteUser.uid, 'reason:', reason)
-      })
-
-      client.on('connection-state-change', (cur, prev) => {
-        console.log('Connection state:', prev, '->', cur)
-        if (cur === 'DISCONNECTED' && prev === 'CONNECTED') {
-          console.log('Call disconnected — attempting reconnection')
-          if (clientRef.current) {
-            try { clientRef.current.leave() } catch {}
-            clientRef.current = null
-          }
-          if (channelName) {
-            joiningRef.current = false
-            setTimeout(() => joinAgora(channelName, uid), 1000)
-          }
         }
       })
 
       await client.join(appId, channelName, null, uid)
 
-      let micAcquired = false
-      try {
-        const track = await AgoraRTC.createMicrophoneAudioTrack()
+      const track = await ensureMicTrack()
+      if (track) {
         if (mutedRef.current) track.setEnabled(false)
-        localTrackRef.current = track
         await client.publish(track)
-        micAcquired = true
-      } catch (micErr) {
-        console.warn('Could not acquire microphone, joining listen-only:', micErr)
       }
-      setHasMic(micAcquired)
 
-      setElapsed(0)
-      timerRef.current = setInterval(() => {
-        setElapsed(prev => prev + 1)
-      }, 1000)
+      await startTimer()
     } catch (err) {
       console.error('Failed to join Agora channel:', err)
       setError(`Call failed: ${(err as Error).message || 'Unknown error'}`)
@@ -195,6 +165,7 @@ export function useCall(userId: string | undefined, chatId: number | undefined, 
             callIdRef.current = newCall.id
             setTrackedCallId(newCall.id)
             setIncomingCallerId(newCall.caller_id)
+            callStartRef.current = new Date(newCall.created_at).getTime()
             setStatus('ringing')
           }
         }
@@ -223,6 +194,9 @@ export function useCall(userId: string | undefined, chatId: number | undefined, 
           const updated = payload.new as Call
           if (updated.status === 'active') {
             setStatus('connected')
+            if (!callStartRef.current) {
+              callStartRef.current = new Date(updated.created_at).getTime()
+            }
             await joinAgora(updated.channel_name, userId!)
           } else if (updated.status === 'ended' || updated.status === 'missed') {
             handleEnded()
@@ -262,6 +236,7 @@ export function useCall(userId: string | undefined, chatId: number | undefined, 
     callIdRef.current = data.id
     setTrackedCallId(data.id)
     setIncomingCallerId(userId)
+    callStartRef.current = new Date(data.created_at).getTime()
     setStatus('calling')
   }, [userId, chatId, partnerId])
 
@@ -311,14 +286,18 @@ export function useCall(userId: string | undefined, chatId: number | undefined, 
     const newMuted = !mutedRef.current
     mutedRef.current = newMuted
     setIsMuted(newMuted)
-    if (localTrackRef.current) {
-      localTrackRef.current.setEnabled(!newMuted)
+    if (micTrackRef.current) {
+      micTrackRef.current.setEnabled(!newMuted)
     }
   }, [])
 
   useEffect(() => {
     return () => {
       cleanup()
+      if (micTrackRef.current) {
+        micTrackRef.current.close()
+        micTrackRef.current = null
+      }
     }
   }, [])
 

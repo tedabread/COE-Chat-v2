@@ -3,32 +3,23 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import { supabase } from '../supabaseClient'
-import { useMessages } from '../hooks/useMessages'
+import { useChannelMessages } from '../hooks/useChannelMessages'
 import { useTyping } from '../hooks/useTyping'
 import { getFontFamily, loadFont } from '../utils/fonts'
 import { getAvatarColor } from '../utils/avatar'
 import { compressImage } from '../utils/compress'
 import { getFlagUrl } from '../utils/flags'
 import { renderEmojis, isEmojiOnly, EMOJI_RE } from '../utils/openmoji'
-import type { Profile, Message, CallStatus } from '../types'
 import { nameToEmoji } from 'gemoji'
+import type { Profile, Message, Channel } from '../types'
 import { Icon } from './Icon'
 import { EmojiPicker } from './EmojiPicker'
-import { CallOverlay } from './CallOverlay'
 import { AdminBadge } from './AdminBadge'
 
 interface Props {
-  chatId: number
-  partner: Profile | null
+  channel: Channel
   onClose: () => void
-  groupName?: string
-  callStatus: CallStatus
-  incomingCallerId: string | null
-  elapsed: number
-  startCall: () => void
-  acceptCall: () => void
-  declineCall: () => void
-  endCall: () => void
+  canManageMessages: boolean
 }
 
 const FLAG_RE = /:flag-([a-z0-9-]+):/g
@@ -70,7 +61,6 @@ function MessageAvatar({ profile }: { profile?: Profile }) {
 function FilePreview({ msg }: { msg: Message }) {
   if (!msg.file_url) return null
   const isImage = msg.file_type?.startsWith('image/')
-
   if (isImage) {
     return (
       <a href={msg.file_url} target="_blank" rel="noopener noreferrer" className="msg-image-link">
@@ -78,9 +68,7 @@ function FilePreview({ msg }: { msg: Message }) {
       </a>
     )
   }
-
   const sizeStr = msg.file_size ? formatSize(msg.file_size) : ''
-
   return (
     <a href={msg.file_url} target="_blank" rel="noopener noreferrer" className="msg-file-link" download={msg.file_name || undefined}>
       <span className="file-icon"><Icon name={getFileIcon(msg.file_type || '')} /></span>
@@ -107,21 +95,23 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
 }
 
-export function ChatView({ chatId, partner, onClose, groupName, callStatus, incomingCallerId, elapsed, startCall, acceptCall, declineCall, endCall }: Props) {
-  const { messages, loading, sendMessage } = useMessages(chatId)
+export function ChannelView({ channel, onClose, canManageMessages }: Props) {
+  const { messages, loading, sendMessage, editMessage, deleteMessage } = useChannelMessages(channel.id)
   const [input, setInput] = useState('')
   const [showEmoji, setShowEmoji] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [replyTo, setReplyTo] = useState<Message | null>(null)
   const [inputFocused, setInputFocused] = useState(false)
+  const [editingMsg, setEditingMsg] = useState<Message | null>(null)
+  const [editInput, setEditInput] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const sendingRef = useRef(false)
   const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined)
 
-  const { typingUserIds, setTyping } = useTyping(chatId, currentUserId)
+  const { typingUserIds, setTyping } = useTyping(channel.id, currentUserId, 'chan')
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -135,25 +125,21 @@ export function ChatView({ chatId, partner, onClose, groupName, callStatus, inco
 
   useEffect(() => {
     for (const msg of messages) {
-      if (msg.profile?.message_font) {
-        loadFont(msg.profile.message_font)
-      }
+      if (msg.profile?.message_font) loadFont(msg.profile.message_font)
     }
   }, [messages])
 
-  useEffect(() => {
-    if (partner?.name_font) loadFont(partner.name_font)
-  }, [partner])
-
   const isTyping = inputFocused && input.trim().length > 0
-  useEffect(() => {
-    setTyping(isTyping)
-  }, [isTyping])
+  useEffect(() => { setTyping(isTyping) }, [isTyping])
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
+    }
+    if (e.key === 'Escape') {
+      setEditingMsg(null)
+      setReplyTo(null)
     }
   }
 
@@ -176,7 +162,7 @@ export function ChatView({ chatId, partner, onClose, groupName, callStatus, inco
         try {
           const compressed = await compressImage(pendingFile)
           file = new File([compressed], pendingFile.name, { type: pendingFile.type })
-        } catch { /* use original */ }
+        } catch { }
       }
     }
 
@@ -214,6 +200,24 @@ export function ChatView({ chatId, partner, onClose, groupName, callStatus, inco
     setShowEmoji(false)
   }
 
+  function startEdit(msg: Message) {
+    if (!canManageMessages && msg.sender_id !== currentUserId) return
+    setEditingMsg(msg)
+    setEditInput(msg.content)
+  }
+
+  async function saveEdit() {
+    if (!editingMsg || !editInput.trim()) return
+    await editMessage(editingMsg.id, editInput.trim())
+    setEditingMsg(null)
+    setEditInput('')
+  }
+
+  function handleDelete(msg: Message) {
+    if (!confirm('Delete this message?')) return
+    deleteMessage(msg.id)
+  }
+
   return (
     <div className="chat-layout">
       <div className="chat-panel">
@@ -221,23 +225,10 @@ export function ChatView({ chatId, partner, onClose, groupName, callStatus, inco
           <button className="chat-close-btn" onClick={onClose}>
             <Icon name="close" />
           </button>
-          {partner && (
-            <span className="chat-partner-name" style={{
-              fontFamily: partner.name_font ? getFontFamily(partner.name_font) : undefined,
-              color: partner.name_color || undefined,
-              ...((partner.role === 'admin' || partner.role === 'owner') ? { textShadow: `1px 0 0.3px ${partner.admin_outline_color || '#cba6f7'}, -1px 0 0.3px ${partner.admin_outline_color || '#cba6f7'}, 0 1px 0.3px ${partner.admin_outline_color || '#cba6f7'}, 0 -1px 0.3px ${partner.admin_outline_color || '#cba6f7'}, 1px 1px 0.3px ${partner.admin_outline_color || '#cba6f7'}, -1px 1px 0.3px ${partner.admin_outline_color || '#cba6f7'}, -1px -1px 0.3px ${partner.admin_outline_color || '#cba6f7'}, 1px -1px 0.3px ${partner.admin_outline_color || '#cba6f7'}` } : {}),
-            }}>
-              {partner.display_name || partner.username}
-              <AdminBadge role={partner?.role} />
-            </span>
-          )}
-          {groupName && <span className="chat-group-title">{groupName}</span>}
-          <div className="chat-header-spacer" />
-          <button className="chat-call-btn" title="Call" onClick={startCall}>
-            <Icon name="call" />
-          </button>
+          <span className="channel-hash chat-channel-hash">#</span>
+          <span className="chat-channel-name">{channel.name}</span>
         </div>
-        <div className={`messages-container${partner && typingUserIds.includes(partner.id) ? ' has-typing' : ''}`}>
+        <div className="messages-container">
           {loading ? (
             <div className="loading">Loading messages...</div>
           ) : messages.length === 0 ? (
@@ -247,10 +238,10 @@ export function ChatView({ chatId, partner, onClose, groupName, callStatus, inco
               const prev = messages[i - 1]
               const isSameSender = prev && prev.sender_id === msg.sender_id
               const time = new Date(msg.created_at).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
+                hour: '2-digit', minute: '2-digit',
               })
               const replyMsg = msg.reply_to ? messages.find(m => m.id === msg.reply_to) : null
+              const canEdit = canManageMessages || msg.sender_id === currentUserId
               return (
                 <div id={`msg-${msg.id}`} key={msg.id} className={`msg-row${isSameSender ? ' same-sender' : ''}`}>
                   {isSameSender ? (
@@ -288,23 +279,52 @@ export function ChatView({ chatId, partner, onClose, groupName, callStatus, inco
                         </div>
                       </div>
                     )}
-                    {msg.content && (
-                      <div className={`msg-text${isEmojiOnly(msg.content) ? ' msg-emoji-only' : EMOJI_RE.test(msg.content) ? ' msg-has-emoji' : ''}`} style={{
-                        fontFamily: msg.profile?.message_font ? getFontFamily(msg.profile.message_font) : undefined,
-                      }}>
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                          {renderContent(msg.content)}
-                        </ReactMarkdown>
+                    {editingMsg?.id === msg.id ? (
+                      <div className="msg-edit-box">
+                        <input
+                          type="text"
+                          value={editInput}
+                          onChange={e => setEditInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit() } }}
+                          autoFocus
+                        />
+                        <div className="msg-edit-actions">
+                          <button onClick={saveEdit}>Save</button>
+                          <button onClick={() => setEditingMsg(null)}>Cancel</button>
+                        </div>
                       </div>
+                    ) : (
+                      <>
+                        {msg.content && (
+                          <div className={`msg-text${isEmojiOnly(msg.content) ? ' msg-emoji-only' : EMOJI_RE.test(msg.content) ? ' msg-has-emoji' : ''}`} style={{
+                            fontFamily: msg.profile?.message_font ? getFontFamily(msg.profile.message_font) : undefined,
+                          }}>
+                            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                              {renderContent(msg.content)}
+                            </ReactMarkdown>
+                            {msg.edited && <span className="msg-edited">(edited)</span>}
+                          </div>
+                        )}
+                        <FilePreview msg={msg} />
+                      </>
                     )}
-                    <FilePreview msg={msg} />
-                    <button
-                      className="msg-reply-btn"
-                      onClick={() => setReplyTo(msg)}
-                      title="Reply"
-                    >
-                      <Icon name="reply" />
-                    </button>
+                    <div className="msg-actions-row">
+                      {!editingMsg && (
+                        <button className="msg-reply-btn" onClick={() => setReplyTo(msg)} title="Reply">
+                          <Icon name="reply" />
+                        </button>
+                      )}
+                      {canEdit && !editingMsg && (
+                        <button className="msg-reply-btn" onClick={() => startEdit(msg)} title="Edit">
+                          <Icon name="edit" />
+                        </button>
+                      )}
+                      {(canManageMessages || msg.sender_id === currentUserId) && !editingMsg && (
+                        <button className="msg-reply-btn" onClick={() => handleDelete(msg)} title="Delete">
+                          <Icon name="close" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )
@@ -313,13 +333,10 @@ export function ChatView({ chatId, partner, onClose, groupName, callStatus, inco
           <div ref={bottomRef} />
         </div>
 
-        <form
-          className="message-input"
-          onSubmit={(e) => { e.preventDefault(); handleSend() }}
-        >
-          {partner && typingUserIds.includes(partner.id) && (
+        <form className="message-input" onSubmit={e => { e.preventDefault(); handleSend() }}>
+          {typingUserIds.length > 0 && (
             <div className="typing-indicator">
-              <em>{partner.display_name || partner.username}</em> is typing...
+              <em>Someone</em> is typing...
             </div>
           )}
           {replyTo && (
@@ -349,12 +366,7 @@ export function ChatView({ chatId, partner, onClose, groupName, callStatus, inco
             </div>
           )}
           <div className="input-row">
-            <input
-              type="file"
-              ref={fileRef}
-              onChange={onFilePick}
-              style={{ display: 'none' }}
-            />
+            <input type="file" ref={fileRef} onChange={onFilePick} style={{ display: 'none' }} />
             <button type="button" className="input-btn" onClick={() => fileRef.current?.click()} disabled={uploading}>
               <Icon name="paperclip" />
             </button>
@@ -364,57 +376,23 @@ export function ChatView({ chatId, partner, onClose, groupName, callStatus, inco
               </button>
               {showEmoji && <EmojiPicker onEmoji={onEmojiPick} onClose={() => setShowEmoji(false)} />}
             </div>
-              <input
-                  ref={inputRef}
-                  type="text"
-                  placeholder={uploading ? 'Uploading...' : 'Type a message...'}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  onFocus={() => setInputFocused(true)}
-                  onBlur={() => setInputFocused(false)}
-                  disabled={uploading}
-                />
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder={uploading ? 'Uploading...' : `Message #${channel.name}`}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onFocus={() => setInputFocused(true)}
+              onBlur={() => setInputFocused(false)}
+              disabled={uploading}
+            />
             <button type="submit" disabled={uploading || (!input.trim() && !pendingFile)}>
               <Icon name="send" />
             </button>
           </div>
         </form>
       </div>
-
-      {partner && !groupName && (
-        <aside className="partner-sidebar">
-          <div className="partner-banner" style={{ backgroundColor: partner.banner_color || 'var(--surface0)' }} />
-          <div className="partner-avatar">
-            {partner.avatar_url ? (
-              <img src={partner.avatar_url} alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
-            ) : (
-              <Icon name="user" />
-            )}
-          </div>
-          <div
-            className="partner-name"
-            style={{
-              fontFamily: partner.name_font ? getFontFamily(partner.name_font) : undefined,
-              color: partner.name_color || undefined,
-              ...((partner.role === 'admin' || partner.role === 'owner') ? { textShadow: `1px 0 0.3px ${partner.admin_outline_color || '#cba6f7'}, -1px 0 0.3px ${partner.admin_outline_color || '#cba6f7'}, 0 1px 0.3px ${partner.admin_outline_color || '#cba6f7'}, 0 -1px 0.3px ${partner.admin_outline_color || '#cba6f7'}, 1px 1px 0.3px ${partner.admin_outline_color || '#cba6f7'}, -1px 1px 0.3px ${partner.admin_outline_color || '#cba6f7'}, -1px -1px 0.3px ${partner.admin_outline_color || '#cba6f7'}, 1px -1px 0.3px ${partner.admin_outline_color || '#cba6f7'}` } : {}),
-            }}
-          >
-            {partner.display_name || partner.username}
-            <AdminBadge role={partner?.role} />
-          </div>
-          <div className="partner-tag">{partner.username}#{partner.uid}</div>
-          {partner.status && <div className="partner-status">{partner.status}</div>}
-        </aside>
-      )}
-      <CallOverlay
-        status={callStatus}
-        incomingCallerId={incomingCallerId}
-        elapsed={elapsed}
-        onAccept={acceptCall}
-        onDecline={declineCall}
-        onEnd={endCall}
-      />
     </div>
   )
 }

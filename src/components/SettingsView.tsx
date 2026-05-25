@@ -215,11 +215,11 @@ export function SettingsView({ profile, onClose, onProfileUpdate }: Props) {
               style={{
                 fontFamily: profile.name_font ? getFontFamily(profile.name_font) : undefined,
                 color: profile.name_color || undefined,
-                ...(profile.role === 'admin' ? { textShadow: adminOutline(profile.admin_outline_color) } : {}),
+                ...((profile.role === 'admin' || profile.role === 'owner') ? { textShadow: adminOutline(profile.admin_outline_color) } : {}),
               }}
             >
               {profile.display_name || profile.username}
-              {profile.role === 'admin' && <AdminBadge />}
+              <AdminBadge role={profile.role} />
             </div>
             <div className="sidebar-tag">{profile.username}#{profile.uid}</div>
             {profile.status && <div className="sidebar-status">{profile.status}</div>}
@@ -522,8 +522,11 @@ export function SettingsView({ profile, onClose, onProfileUpdate }: Props) {
         </div>
 
         <p style={{ color: 'var(--subtext0)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-          Peer-to-peer messaging built with React, Supabase, and Catppuccin.
+          Peer-to-peer messaging built with React and Supabase.
         </p>
+
+        <br></br>
+        <p>View the source code at <a>will go here later.</a></p>
 
         <div className="settings-section">
           <h3>Created by</h3>
@@ -541,11 +544,11 @@ export function SettingsView({ profile, onClose, onProfileUpdate }: Props) {
               style={{
                 fontFamily: c?.name_font ? getFontFamily(c.name_font) : undefined,
                 color: c?.name_color || undefined,
-                ...(c?.role === 'admin' ? { textShadow: adminOutline(c?.admin_outline_color) } : {}),
+                ...((c?.role === 'admin' || c?.role === 'owner') ? { textShadow: adminOutline(c?.admin_outline_color) } : {}),
               }}
             >
               {c?.display_name || c?.username || 'pidgeon-religion'}
-              {c?.role === 'admin' && <AdminBadge />}
+              <AdminBadge role={c?.role} />
             </div>
             <div className="sidebar-tag">
               {c ? `${c.username}#${c.uid}` : 'pidgeon-religion#?'}

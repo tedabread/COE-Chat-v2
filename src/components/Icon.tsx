@@ -33,6 +33,7 @@ const icons: Record<string, string> = {
   mic_off: '\uF131',
   shield: '\uF132',
   refresh: '\uF021',
+  edit: '\uF044',
 }
 
 export function Icon({ name, className = '' }: Props) {

@@ -61,6 +61,9 @@ export default function App() {
         <Route path="/" element={<AuthGuard><Home /></AuthGuard>} />
         <Route path="/chat/:id" element={<AuthGuard><Home /></AuthGuard>} />
         <Route path="/settings" element={<AuthGuard><SettingsPage /></AuthGuard>} />
+        <Route path="/server/:serverId/channel/:channelId" element={<AuthGuard><Home /></AuthGuard>} />
+        <Route path="/server/:serverId" element={<AuthGuard><Home /></AuthGuard>} />
+        <Route path="/invite/:serverId" element={<AuthGuard><UserRedirect /></AuthGuard>} />
         <Route path="/:identifier" element={<AuthGuard><UserRedirect /></AuthGuard>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

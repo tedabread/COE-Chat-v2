@@ -1,52 +1,129 @@
--- Admin role and outline color
-ALTER TABLE profiles ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user' CHECK (role IN ('user', 'moderator', 'admin'));
+-- ============================================================
+-- COE Chat v2 — Complete Database Setup
+-- Idempotent — safe to run multiple times
+-- ============================================================
+
+-- ── Profiles: widen site-wide roles ─────────────────────────
+
+ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_role_check;
+ALTER TABLE profiles ADD CONSTRAINT profiles_role_check
+  CHECK (role IN ('user', 'moderator', 'admin', 'owner'));
+
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user';
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS admin_outline_color TEXT DEFAULT '#cba6f7';
 
--- Seed the first admin
-UPDATE profiles SET role = 'admin' WHERE username = 'pidgeon-religion';
+-- Seed owner + admin
+UPDATE profiles SET role = 'owner' WHERE username = 'pidgeon-religion';
+UPDATE profiles SET role = 'admin' WHERE role = 'admin' AND username != 'pidgeon-religion';
 
--- Helper function to check if a user is admin (bypasses RLS to avoid recursion)
-CREATE OR REPLACE FUNCTION is_user_admin(uid uuid)
+-- ── Helper: is user site-wide admin or owner? ───────────────
+-- NOTE: param names MUST match originals so CREATE OR REPLACE works
+
+CREATE OR REPLACE FUNCTION is_user_site_admin(uid uuid)
 RETURNS boolean
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT EXISTS (SELECT 1 FROM profiles WHERE id = uid AND role = 'admin')
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM profiles
+    WHERE id = is_user_site_admin.uid AND role IN ('admin', 'owner')
+  );
+END;
 $$;
 
--- RLS: allow admins to read all profiles
+CREATE OR REPLACE FUNCTION is_user_admin(uid uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM profiles
+    WHERE id = is_user_admin.uid AND role IN ('admin', 'owner')
+  );
+END;
+$$;
+
+-- ── Membership helper (bypasses RLS to avoid recursion) ──────
+
+DROP FUNCTION IF EXISTS is_server_member(uuid, int) CASCADE;
+DROP FUNCTION IF EXISTS is_server_member(uuid, bigint) CASCADE;
+
+CREATE OR REPLACE FUNCTION is_server_member(uid uuid, sid bigint)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM server_members
+    WHERE user_id = is_server_member.uid AND server_id = is_server_member.sid
+  );
+END;
+$$;
+
+-- ── Permission helper (site-wide override) ──────────────────
+
+DROP FUNCTION IF EXISTS check_server_permission(uuid, bigint, text) CASCADE;
+
+CREATE OR REPLACE FUNCTION check_server_permission(
+  uid uuid, sid bigint, perm text
+) RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  site_role text;
+BEGIN
+  SELECT role INTO site_role FROM profiles WHERE id = check_server_permission.uid;
+  IF site_role IN ('admin', 'owner') THEN
+    RETURN TRUE;
+  END IF;
+  RETURN EXISTS (
+    SELECT 1 FROM server_members sm
+    JOIN server_roles sr ON sr.id = sm.role_id
+    WHERE sm.user_id = check_server_permission.uid
+      AND sm.server_id = check_server_permission.sid
+      AND (sr.permissions->>check_server_permission.perm)::boolean = TRUE
+  );
+END;
+$$;
+
+-- ── Existing RLS policies (broadened) ──────────────────────
+
 DROP POLICY IF EXISTS "Admins can read all profiles" ON profiles;
 CREATE POLICY "Admins can read all profiles" ON profiles
   FOR SELECT USING (is_user_admin(auth.uid()));
 
--- RLS: allow admins to update all profiles
 DROP POLICY IF EXISTS "Admins can update all profiles" ON profiles;
 CREATE POLICY "Admins can update all profiles" ON profiles
   FOR UPDATE USING (is_user_admin(auth.uid()));
 
--- RLS: allow admins to read all messages
 DROP POLICY IF EXISTS "Admins can read all messages" ON messages;
 CREATE POLICY "Admins can read all messages" ON messages
   FOR SELECT USING (is_user_admin(auth.uid()));
 
--- RLS: allow admins to delete messages
 DROP POLICY IF EXISTS "Admins can delete messages" ON messages;
 CREATE POLICY "Admins can delete messages" ON messages
   FOR DELETE USING (is_user_admin(auth.uid()));
 
--- RLS: allow admins to read friend_requests
 DROP POLICY IF EXISTS "Admins can read all friend_requests" ON friend_requests;
 CREATE POLICY "Admins can read all friend_requests" ON friend_requests
   FOR SELECT USING (is_user_admin(auth.uid()));
 
--- RLS: allow admins to delete friend_requests
 DROP POLICY IF EXISTS "Admins can delete friend_requests" ON friend_requests;
 CREATE POLICY "Admins can delete friend_requests" ON friend_requests
   FOR DELETE USING (is_user_admin(auth.uid()));
 
--- RLS: allow admins to read chats and chat_members
 DROP POLICY IF EXISTS "Admins can read all chats" ON chats;
 CREATE POLICY "Admins can read all chats" ON chats
   FOR SELECT USING (is_user_admin(auth.uid()));
@@ -55,7 +132,281 @@ DROP POLICY IF EXISTS "Admins can read all chat_members" ON chat_members;
 CREATE POLICY "Admins can read all chat_members" ON chat_members
   FOR SELECT USING (is_user_admin(auth.uid()));
 
--- RLS: allow admins to read calls
 DROP POLICY IF EXISTS "Admins can read all calls" ON calls;
 CREATE POLICY "Admins can read all calls" ON calls
   FOR SELECT USING (is_user_admin(auth.uid()));
+
+-- ── DM helper ──────────────────────────────────────────────
+
+DROP FUNCTION IF EXISTS find_or_create_dm(uuid, uuid) CASCADE;
+CREATE OR REPLACE FUNCTION find_or_create_dm(user_a uuid, user_b uuid)
+RETURNS int
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  existing_chat_id int;
+  new_chat_id int;
+BEGIN
+  SELECT c.id INTO existing_chat_id
+  FROM chats c
+  WHERE EXISTS (
+    SELECT 1 FROM chat_members cm1
+    WHERE cm1.chat_id = c.id AND cm1.user_id = user_a
+  )
+  AND EXISTS (
+    SELECT 1 FROM chat_members cm2
+    WHERE cm2.chat_id = c.id AND cm2.user_id = user_b
+  )
+  AND (SELECT COUNT(*) FROM chat_members WHERE chat_id = c.id) = 2
+  LIMIT 1;
+
+  IF existing_chat_id IS NOT NULL THEN
+    RETURN existing_chat_id;
+  END IF;
+
+  INSERT INTO chats (created_by) VALUES (user_a) RETURNING id INTO new_chat_id;
+  INSERT INTO chat_members (chat_id, user_id) VALUES (new_chat_id, user_a), (new_chat_id, user_b);
+
+  RETURN new_chat_id;
+END;
+$$;
+
+-- ── SERVERS ────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS servers (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  owner_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  icon_url TEXT,
+  banner_color TEXT DEFAULT '#313244',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE servers ENABLE ROW LEVEL SECURITY;
+
+-- Migrate existing tables that might lack newer columns
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS icon_url TEXT;
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS banner_color TEXT DEFAULT '#313244';
+
+DROP POLICY IF EXISTS "Members can view servers" ON servers;
+CREATE POLICY "Members can view servers" ON servers
+  FOR SELECT USING (
+    owner_id = auth.uid()
+    OR is_server_member(auth.uid(), id)
+    OR is_user_admin(auth.uid())
+  );
+
+DROP POLICY IF EXISTS "Users can create servers" ON servers;
+CREATE POLICY "Users can create servers" ON servers
+  FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+
+DROP POLICY IF EXISTS "Owner can update server" ON servers;
+CREATE POLICY "Owner can update server" ON servers
+  FOR UPDATE USING (
+    owner_id = auth.uid() OR is_user_admin(auth.uid())
+  );
+
+-- ── SERVER ROLES ──────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS server_roles (
+  id SERIAL PRIMARY KEY,
+  server_id INT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  color TEXT,
+  permissions JSONB NOT NULL DEFAULT '{}',
+  position INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE server_roles ENABLE ROW LEVEL SECURITY;
+
+-- Migrate existing tables that might lack newer columns
+ALTER TABLE server_roles ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE server_roles ADD COLUMN IF NOT EXISTS position INT DEFAULT 0;
+
+DROP POLICY IF EXISTS "Members can view roles" ON server_roles;
+CREATE POLICY "Members can view roles" ON server_roles
+  FOR SELECT USING (
+    is_server_member(auth.uid(), server_id)
+    OR is_user_admin(auth.uid())
+  );
+
+DROP POLICY IF EXISTS "Server admins can manage roles" ON server_roles;
+CREATE POLICY "Server admins can manage roles" ON server_roles
+  FOR ALL USING (
+    check_server_permission(auth.uid(), server_roles.server_id, 'manage_roles')
+    OR is_user_admin(auth.uid())
+  );
+
+-- ── SERVER MEMBERS ─────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS server_members (
+  id SERIAL PRIMARY KEY,
+  server_id INT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  role_id INT REFERENCES server_roles(id) ON DELETE SET NULL,
+  joined_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(server_id, user_id)
+);
+
+ALTER TABLE server_members ENABLE ROW LEVEL SECURITY;
+
+-- Migrate existing tables that might lack newer columns
+ALTER TABLE server_members ADD COLUMN IF NOT EXISTS role_id INT REFERENCES server_roles(id) ON DELETE SET NULL;
+
+DROP POLICY IF EXISTS "Members can view members" ON server_members;
+CREATE POLICY "Members can view members" ON server_members
+  FOR SELECT USING (
+    is_server_member(auth.uid(), server_id)
+    OR is_user_admin(auth.uid())
+  );
+
+DROP POLICY IF EXISTS "Server admins can manage members" ON server_members;
+CREATE POLICY "Server admins can manage members" ON server_members
+  FOR UPDATE USING (
+    check_server_permission(auth.uid(), server_members.server_id, 'manage_server')
+    OR is_user_admin(auth.uid())
+  );
+
+DROP POLICY IF EXISTS "Server admins can kick members" ON server_members;
+CREATE POLICY "Server admins can kick members" ON server_members
+  FOR DELETE USING (
+    check_server_permission(auth.uid(), server_members.server_id, 'manage_server')
+    OR is_user_admin(auth.uid())
+  );
+
+DROP POLICY IF EXISTS "Users can join via invite" ON server_members;
+CREATE POLICY "Users can join via invite" ON server_members
+  FOR INSERT WITH CHECK (
+    user_id = auth.uid()
+    AND NOT is_server_member(auth.uid(), server_id)
+  );
+
+-- ── CHANNELS ───────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS channels (
+  id SERIAL PRIMARY KEY,
+  server_id INT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'text' CHECK (type IN ('text', 'voice')),
+  position INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE channels ENABLE ROW LEVEL SECURITY;
+
+-- Migrate existing tables that might lack newer columns
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'text';
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS position INT DEFAULT 0;
+
+DROP POLICY IF EXISTS "Members can view channels" ON channels;
+CREATE POLICY "Members can view channels" ON channels
+  FOR SELECT USING (
+    is_server_member(auth.uid(), server_id)
+    OR is_user_admin(auth.uid())
+  );
+
+DROP POLICY IF EXISTS "Server admins can manage channels" ON channels;
+CREATE POLICY "Server admins can manage channels" ON channels
+  FOR ALL USING (
+    check_server_permission(auth.uid(), channels.server_id, 'manage_channels')
+    OR is_user_admin(auth.uid())
+  );
+
+-- ── Messages: add channel + edit support ────────────────────
+
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS channel_id INT REFERENCES channels(id) ON DELETE CASCADE;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited BOOLEAN DEFAULT FALSE;
+
+-- ── Message RLS: channel moderators can edit/delete ─────────
+
+DROP POLICY IF EXISTS "Users can update own messages" ON messages;
+CREATE POLICY "Users can update own messages" ON messages
+  FOR UPDATE USING (
+    sender_id = auth.uid()
+    OR (channel_id IS NOT NULL AND check_server_permission(
+      auth.uid(),
+      (SELECT server_id FROM channels WHERE id = channel_id),
+      'manage_messages'
+    ))
+    OR is_user_admin(auth.uid())
+  );
+
+-- ── VOICE PARTICIPANTS ─────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS voice_participants (
+  id SERIAL PRIMARY KEY,
+  channel_id INT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  joined_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(channel_id, user_id)
+);
+
+ALTER TABLE voice_participants ENABLE ROW LEVEL SECURITY;
+
+-- Migrate existing tables that might lack newer columns
+ALTER TABLE voice_participants ADD COLUMN IF NOT EXISTS joined_at TIMESTAMPTZ DEFAULT NOW();
+
+DROP POLICY IF EXISTS "Members can view voice participants" ON voice_participants;
+CREATE POLICY "Members can view voice participants" ON voice_participants
+  FOR SELECT USING (
+    is_server_member(auth.uid(), (SELECT server_id FROM channels WHERE id = channel_id))
+    OR is_user_admin(auth.uid())
+  );
+
+DROP POLICY IF EXISTS "Users can join voice" ON voice_participants;
+CREATE POLICY "Users can join voice" ON voice_participants
+  FOR INSERT WITH CHECK (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "Users can leave voice" ON voice_participants;
+CREATE POLICY "Users can leave voice" ON voice_participants
+  FOR DELETE USING (user_id = auth.uid());
+
+-- ── Auto-create default roles when a server is created ──────
+
+CREATE OR REPLACE FUNCTION create_default_server_roles()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  admin_role_id int;
+BEGIN
+  -- Clean slate for this server (handles retries / stale data)
+  DELETE FROM server_roles WHERE server_id = NEW.id;
+
+  INSERT INTO server_roles (server_id, name, color, permissions, position) VALUES
+    (NEW.id, 'Admin',     '#ed8796',
+      '{"manage_messages":true,"manage_channels":true,"manage_server":true,"kick_members":true,"ban_members":true,"manage_roles":true}'::jsonb, 0),
+    (NEW.id, 'Moderator', '#8aadf4',
+      '{"manage_messages":true,"manage_channels":false,"manage_server":false,"kick_members":false,"ban_members":false,"manage_roles":false}'::jsonb, 1),
+    (NEW.id, 'Member',    NULL,
+      '{"manage_messages":false,"manage_channels":false,"manage_server":false,"kick_members":false,"ban_members":false,"manage_roles":false}'::jsonb, 2);
+
+  SELECT id INTO admin_role_id FROM server_roles WHERE server_id = NEW.id AND name = 'Admin';
+
+  INSERT INTO server_members (server_id, user_id, role_id)
+    VALUES (NEW.id, NEW.owner_id, admin_role_id)
+    ON CONFLICT (server_id, user_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_create_default_server_roles ON servers;
+CREATE TRIGGER trg_create_default_server_roles
+  AFTER INSERT ON servers
+  FOR EACH ROW EXECUTE FUNCTION create_default_server_roles();
+
+-- ── Nuke all servers (run this in SQL editor to wipe everything) ──
+-- CREATE OR REPLACE FUNCTION nuke_all_servers() RETURNS void
+-- LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+-- BEGIN
+--   DELETE FROM servers;
+-- END;
+-- $$;
+-- SELECT nuke_all_servers();
