@@ -191,12 +191,9 @@ ALTER TABLE servers ADD COLUMN IF NOT EXISTS icon_url TEXT;
 ALTER TABLE servers ADD COLUMN IF NOT EXISTS banner_color TEXT DEFAULT '#313244';
 
 DROP POLICY IF EXISTS "Members can view servers" ON servers;
-CREATE POLICY "Members can view servers" ON servers
-  FOR SELECT USING (
-    owner_id = auth.uid()
-    OR is_server_member(auth.uid(), id)
-    OR is_user_admin(auth.uid())
-  );
+DROP POLICY IF EXISTS "Anyone can view servers" ON servers;
+CREATE POLICY "Anyone can view servers" ON servers
+  FOR SELECT USING (auth.uid() IS NOT NULL);
 
 DROP POLICY IF EXISTS "Users can create servers" ON servers;
 CREATE POLICY "Users can create servers" ON servers
@@ -234,8 +231,18 @@ CREATE POLICY "Members can view roles" ON server_roles
   );
 
 DROP POLICY IF EXISTS "Server admins can manage roles" ON server_roles;
-CREATE POLICY "Server admins can manage roles" ON server_roles
-  FOR ALL USING (
+CREATE POLICY "Server admins can insert roles" ON server_roles
+  FOR INSERT WITH CHECK (
+    check_server_permission(auth.uid(), server_id, 'manage_roles')
+    OR is_user_admin(auth.uid())
+  );
+CREATE POLICY "Server admins can update roles" ON server_roles
+  FOR UPDATE USING (
+    check_server_permission(auth.uid(), server_roles.server_id, 'manage_roles')
+    OR is_user_admin(auth.uid())
+  );
+CREATE POLICY "Server admins can delete roles" ON server_roles
+  FOR DELETE USING (
     check_server_permission(auth.uid(), server_roles.server_id, 'manage_roles')
     OR is_user_admin(auth.uid())
   );
@@ -309,9 +316,19 @@ CREATE POLICY "Members can view channels" ON channels
   );
 
 DROP POLICY IF EXISTS "Server admins can manage channels" ON channels;
-CREATE POLICY "Server admins can manage channels" ON channels
-  FOR ALL USING (
-    check_server_permission(auth.uid(), channels.server_id, 'manage_channels')
+CREATE POLICY "Members can create channels" ON channels
+  FOR INSERT WITH CHECK (
+    is_server_member(auth.uid(), server_id)
+    OR is_user_admin(auth.uid())
+  );
+CREATE POLICY "Server admins can update channels" ON channels
+  FOR UPDATE USING (
+    is_server_member(auth.uid(), channels.server_id)
+    OR is_user_admin(auth.uid())
+  );
+CREATE POLICY "Server admins can delete channels" ON channels
+  FOR DELETE USING (
+    is_server_member(auth.uid(), channels.server_id)
     OR is_user_admin(auth.uid())
   );
 
@@ -321,17 +338,34 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS channel_id INT REFERENCES channels
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited BOOLEAN DEFAULT FALSE;
 
+-- Allow channel messages (no chat_id) to exist
+ALTER TABLE messages ALTER COLUMN chat_id DROP NOT NULL;
+
 -- ── Message RLS: channel moderators can edit/delete ─────────
+
+DROP POLICY IF EXISTS "Members can read channel messages" ON messages;
+CREATE POLICY "Members can read channel messages" ON messages
+  FOR SELECT USING (
+    channel_id IS NULL
+    OR is_server_member(auth.uid(), (SELECT server_id FROM channels WHERE id = channel_id))
+    OR is_user_admin(auth.uid())
+  );
+
+DROP POLICY IF EXISTS "Members can send channel messages" ON messages;
+CREATE POLICY "Members can send channel messages" ON messages
+  FOR INSERT WITH CHECK (
+    sender_id = auth.uid()
+    AND (
+      channel_id IS NULL
+      OR is_server_member(auth.uid(), (SELECT server_id FROM channels WHERE id = channel_id))
+    )
+  );
 
 DROP POLICY IF EXISTS "Users can update own messages" ON messages;
 CREATE POLICY "Users can update own messages" ON messages
   FOR UPDATE USING (
     sender_id = auth.uid()
-    OR (channel_id IS NOT NULL AND check_server_permission(
-      auth.uid(),
-      (SELECT server_id FROM channels WHERE id = channel_id),
-      'manage_messages'
-    ))
+    OR (channel_id IS NOT NULL AND is_server_member(auth.uid(), (SELECT server_id FROM channels WHERE id = channel_id)))
     OR is_user_admin(auth.uid())
   );
 

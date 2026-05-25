@@ -3,12 +3,24 @@ import { supabase } from '../supabaseClient'
 import type { Message } from '../types'
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
+const C = {
+  ch: 'color:#89b4fa;font-weight:bold',
+  ok: 'color:#a6e3a1',
+  err: 'color:#f38ba8;font-weight:bold',
+  wrn: 'color:#f9e2af',
+  info: 'color:#cdd6f4',
+  dim: 'color:#6c7086',
+  sub: 'color:#cba6f7',
+  act: 'color:#fab387',
+}
+
 export function useChannelMessages(channelId: number | undefined) {
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!channelId) return
+    console.log(`%c[channel]%c mount id=%d`, C.ch, C.info, channelId)
     setLoading(true)
     fetchMessages()
 
@@ -24,15 +36,21 @@ export function useChannelMessages(channelId: number | undefined) {
         },
         async (payload: RealtimePostgresChangesPayload<{ [key: string]: unknown }>) => {
           const newMsg = payload.new as Message
+          console.log(`%c[realtime]%c INSERT id=%d`, C.sub, C.info, newMsg.id)
           const { data: profile } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', newMsg.sender_id)
             .single()
-          setMessages((prev) => [
-            ...prev,
-            { ...newMsg, profile: profile ?? undefined },
-          ])
+          setMessages((prev) => {
+            const opt = prev.find(m => m.id < 0 && m.sender_id === newMsg.sender_id && m.channel_id === newMsg.channel_id)
+            if (opt) {
+              console.log(`%c[realtime]%c replace optimistic %d -> %d`, C.sub, C.ok, opt.id, newMsg.id)
+              return prev.map(m => m.id === opt.id ? { ...newMsg, profile: profile ?? undefined } : m)
+            }
+            console.log(`%c[realtime]%c new msg %d`, C.sub, C.wrn, newMsg.id)
+            return [...prev, { ...newMsg, profile: profile ?? undefined }]
+          })
         }
       )
       .on(
@@ -45,25 +63,32 @@ export function useChannelMessages(channelId: number | undefined) {
         },
         (payload: RealtimePostgresChangesPayload<{ [key: string]: unknown }>) => {
           const updated = payload.new as Message
+          console.log(`%c[realtime]%c UPDATE id=%d`, C.sub, C.act, updated.id)
           setMessages(prev => prev.map(m => m.id === updated.id ? { ...m, content: updated.content, edited: updated.edited, updated_at: updated.updated_at } : m))
         }
       )
       .subscribe()
 
     return () => {
+      console.log(`%c[channel]%c unmount id=%d`, C.ch, C.err, channelId)
       supabase.removeChannel(channel)
     }
   }, [channelId])
 
   async function fetchMessages() {
     if (!channelId) return
+    console.log(`%c[fetch]%c channel=%d`, C.ok, C.info, channelId)
     const { data, error } = await supabase
       .from('messages')
       .select('*, profile:profiles(*)')
       .eq('channel_id', channelId)
       .order('created_at', { ascending: true })
-    if (error) throw error
+    if (error) {
+      console.log(`%c[fetch]%c ERROR:`, C.err, C.dim, error)
+      throw error
+    }
     if (data) setMessages(data)
+    console.log(`%c[fetch]%c %d messages`, C.ok, C.info, data?.length ?? 0)
     setLoading(false)
   }
 
@@ -113,9 +138,10 @@ export function useChannelMessages(channelId: number | undefined) {
       created_at: new Date().toISOString(),
       profile: selfProfile ?? undefined,
     }
+    console.log(`%c[send]%c optimistic id=%d`, C.act, C.dim, tempId)
     setMessages(prev => [...prev, optimistic])
 
-    const { data } = await supabase.from('messages').insert({
+    const { error } = await supabase.from('messages').insert({
       channel_id: channelId,
       sender_id: user.id,
       content: content || '',
@@ -124,29 +150,27 @@ export function useChannelMessages(channelId: number | undefined) {
       file_type: fileInfo?.type || null,
       file_size: fileInfo?.size || null,
       reply_to: replyTo ?? null,
-    }).select('id, created_at').single()
-
-    if (data) {
-      setMessages(prev => prev.map(m =>
-        m.id === tempId ? { ...m, id: data.id, created_at: data.created_at } : m
-      ))
-    }
+    })
+    if (error) console.log(`%c[send]%c INSERT ERROR:`, C.act, C.err, error)
+    else console.log(`%c[send]%c INSERT ok`, C.act, C.ok)
   }
 
   async function editMessage(messageId: number, newContent: string) {
+    console.log(`%c[edit]%c id=%d`, C.act, C.info, messageId)
     const { error } = await supabase
       .from('messages')
       .update({ content: newContent, edited: true, updated_at: new Date().toISOString() })
       .eq('id', messageId)
-    if (error) console.error('editMessage error:', error)
+    if (error) console.log(`%c[edit]%c ERROR:`, C.act, C.err, error)
   }
 
   async function deleteMessage(messageId: number) {
+    console.log(`%c[delete]%c id=%d`, C.err, C.info, messageId)
     const { error } = await supabase
       .from('messages')
       .delete()
       .eq('id', messageId)
-    if (error) console.error('deleteMessage error:', error)
+    if (error) console.log(`%c[delete]%c ERROR:`, C.act, C.err, error)
     else setMessages(prev => prev.filter(m => m.id !== messageId))
   }
 
