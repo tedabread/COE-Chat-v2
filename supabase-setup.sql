@@ -132,6 +132,12 @@ DROP POLICY IF EXISTS "Admins can read all chat_members" ON chat_members;
 CREATE POLICY "Admins can read all chat_members" ON chat_members
   FOR SELECT USING (is_user_admin(auth.uid()));
 
+DROP POLICY IF EXISTS "Users can read chat members in their chats" ON chat_members;
+CREATE POLICY "Users can read chat members in their chats" ON chat_members
+  FOR SELECT USING (
+    chat_id IN (SELECT chat_id FROM chat_members WHERE user_id = auth.uid())
+  );
+
 DROP POLICY IF EXISTS "Admins can read all calls" ON calls;
 CREATE POLICY "Admins can read all calls" ON calls
   FOR SELECT USING (is_user_admin(auth.uid()));
@@ -170,6 +176,20 @@ BEGIN
   INSERT INTO chat_members (chat_id, user_id) VALUES (new_chat_id, user_a), (new_chat_id, user_b);
 
   RETURN new_chat_id;
+END;
+$$;
+
+-- ── Chat member lookup (bypasses RLS for unauthenticated member reads) ──
+
+DROP FUNCTION IF EXISTS get_chat_members(int) CASCADE;
+CREATE OR REPLACE FUNCTION get_chat_members(chat_id_input int)
+RETURNS TABLE(user_id uuid)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN QUERY SELECT cm.user_id FROM chat_members cm WHERE cm.chat_id = chat_id_input;
 END;
 $$;
 

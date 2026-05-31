@@ -1,12 +1,19 @@
 import { useState, useRef, useEffect } from 'react'
-import { publicFonts, fontList, getFontFamily, loadFont } from '../utils/fonts'
+
+interface Option {
+  value: string
+  label: string
+}
 
 interface Props {
   value: string
   onChange: (value: string) => void
+  options: Option[]
+  placeholder?: string
+  className?: string
 }
 
-export function FontSelect({ value, onChange }: Props) {
+export function Select({ value, onChange, options, placeholder, className }: Props) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -20,29 +27,23 @@ export function FontSelect({ value, onChange }: Props) {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  const allFonts = fontList
-  const selected = allFonts.find(f => f.name === value) || publicFonts[0]
+  const selected = options.find(o => o.value === value)
 
   return (
-    <div className="font-select" ref={ref}>
+    <div className={`font-select ${className || ''}`} ref={ref}>
       <button className="font-select-trigger" onClick={() => setOpen(!open)}>
-        <span style={{ fontFamily: getFontFamily(selected.name) }}>
-          {selected.label}
-        </span>
+        <span>{selected?.label || placeholder || value}</span>
         <span className="font-select-arrow">▾</span>
       </button>
       {open && (
         <div className="font-select-dropdown">
-          {publicFonts.map(f => (
+          {options.map(o => (
             <button
-              key={f.name}
-              className={`font-select-option ${f.name === value ? 'active' : ''}`}
-              onClick={() => { onChange(f.name); loadFont(f.name); setOpen(false) }}
+              key={o.value}
+              className={`font-select-option ${o.value === value ? 'active' : ''}`}
+              onClick={() => { onChange(o.value); setOpen(false) }}
             >
-              <span style={{ fontFamily: getFontFamily(f.name) }}>
-                {f.label}
-              </span>
-              <span className="font-select-category">{f.category}</span>
+              <span>{o.label}</span>
             </button>
           ))}
         </div>

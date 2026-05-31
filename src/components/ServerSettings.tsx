@@ -5,6 +5,7 @@ import type { Server, ServerMember, ServerRole, Profile } from '../types'
 import { Icon } from './Icon'
 import { AdminBadge } from './AdminBadge'
 import { getAvatarColor } from '../utils/avatar'
+import { Select } from './Select'
 
 interface Props {
   server: Server
@@ -176,16 +177,14 @@ export function ServerSettings({ server, onClose, onUpdate }: Props) {
                       <AdminBadge role={profile?.role} />
                     </span>
                     {profile?.id !== server.owner_id && (
-                      <select
-                        value={role?.id || ''}
-                        onChange={e => assignRole(m.id, e.target.value ? Number(e.target.value) : null)}
-                        style={{ fontSize: '0.8rem', padding: '0.2rem 0.4rem' }}
-                      >
-                        <option value="">No role</option>
-                        {roles.map(r => (
-                          <option key={r.id} value={r.id}>{r.name}</option>
-                        ))}
-                      </select>
+                      <Select
+                        value={String(role?.id || '')}
+                        onChange={v => assignRole(m.id, v ? Number(v) : null)}
+                        options={[
+                          { value: '', label: 'No role' },
+                          ...roles.map(r => ({ value: String(r.id), label: r.name })),
+                        ]}
+                      />
                     )}
                     {profile?.id === server.owner_id && <span className="role-badge role-badge-owner" style={{ fontSize: '0.5rem' }}>OWNER</span>}
                     {profile?.id !== server.owner_id && (
@@ -247,10 +246,15 @@ export function ServerSettings({ server, onClose, onUpdate }: Props) {
                   placeholder="Channel name"
                   style={{ flex: 1 }}
                 />
-                <select value={newChannelType} onChange={e => setNewChannelType(e.target.value as 'text' | 'voice')}>
-                  <option value="text">Text</option>
-                  <option value="voice">Voice</option>
-                </select>
+                <Select
+                  value={newChannelType}
+                  onChange={v => setNewChannelType(v as 'text' | 'voice')}
+                  options={[
+                    { value: 'text', label: 'Text' },
+                    { value: 'voice', label: 'Voice' },
+                  ]}
+                  className="channel-type-select"
+                />
                 <button className="settings-btn" onClick={createChannel} disabled={!newChannelName.trim()}>Create</button>
               </div>
               {channels.map(ch => (

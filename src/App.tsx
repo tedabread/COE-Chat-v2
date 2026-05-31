@@ -6,8 +6,9 @@ import { Signup } from './pages/Signup'
 import { Home } from './pages/Home'
 import { SettingsPage } from './pages/SettingsPage'
 import { UserRedirect } from './pages/UserRedirect'
+import { NotFound } from './pages/NotFound'
 import { useAuth } from './hooks/useAuth'
-import { DebugConsole } from './components/DebugConsole'
+// import { DebugConsole } from './components/DebugConsole'
 import { onAppReady } from './appReady'
 
 function GuestRoute({ children }: { children: React.ReactNode }) {
@@ -58,16 +59,18 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
         <Route path="/signup" element={<GuestRoute><Signup /></GuestRoute>} />
-        <Route path="/" element={<AuthGuard><Home /></AuthGuard>} />
-        <Route path="/chat/:id" element={<AuthGuard><Home /></AuthGuard>} />
         <Route path="/settings" element={<AuthGuard><SettingsPage /></AuthGuard>} />
-        <Route path="/server/:serverId/channel/:channelId" element={<AuthGuard><Home /></AuthGuard>} />
-        <Route path="/server/:serverId" element={<AuthGuard><Home /></AuthGuard>} />
         <Route path="/invite/:serverId" element={<AuthGuard><UserRedirect /></AuthGuard>} />
         <Route path="/:identifier" element={<AuthGuard><UserRedirect /></AuthGuard>} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route element={<AuthGuard><Home /></AuthGuard>}>
+          <Route index element={<></>} />
+          <Route path="chat/:id" element={<></>} />
+          <Route path="server/:serverId/channel/:channelId" element={<></>} />
+          <Route path="server/:serverId" element={<></>} />
+        </Route>
+        <Route path="*" element={<NotFound />} />
       </Routes>
-      <DebugConsole />
+      {/* <DebugConsole /> */}
     </BrowserRouter>
   )
 }

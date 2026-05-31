@@ -16,6 +16,7 @@ import { Icon } from './Icon'
 import { EmojiPicker } from './EmojiPicker'
 import { CallOverlay } from './CallOverlay'
 import { AdminBadge } from './AdminBadge'
+import { InvitePreview } from './InvitePreview'
 
 interface Props {
   chatId: number
@@ -245,7 +246,8 @@ export function ChatView({ chatId, partner, onClose, groupName, callStatus, inco
           ) : (
             messages.map((msg, i) => {
               const prev = messages[i - 1]
-              const isSameSender = prev && prev.sender_id === msg.sender_id
+              const isSameSender = prev && prev.sender_id === msg.sender_id &&
+                new Date(msg.created_at).getTime() - new Date(prev.created_at).getTime() < 600000
               const time = new Date(msg.created_at).toLocaleTimeString([], {
                 hour: '2-digit',
                 minute: '2-digit',
@@ -298,6 +300,7 @@ export function ChatView({ chatId, partner, onClose, groupName, callStatus, inco
                       </div>
                     )}
                     <FilePreview msg={msg} />
+                    <InvitePreview content={msg.content} />
                     <button
                       className="msg-reply-btn"
                       onClick={() => setReplyTo(msg)}

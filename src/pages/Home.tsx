@@ -3,13 +3,13 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../hooks/useAuth'
 import { useFriends, ensureDmExists } from '../hooks/useFriends'
-import { useServers, fetchServerChannels } from '../hooks/useServers'
+import { useServers, fetchServerChannels, fetchServerMembers } from '../hooks/useServers'
 import { useCall } from '../hooks/useCall'
 import { useVoiceChannel } from '../hooks/useVoiceChannel'
 import { usePresence } from '../hooks/usePresence'
 import { getAvatarColor } from '../utils/avatar'
 import { getFontFamily, loadFont } from '../utils/fonts'
-import type { Profile, Server, Channel } from '../types'
+import type { Profile, Server, Channel, ServerMember } from '../types'
 import { FriendSearch } from '../components/FriendSearch'
 import { FriendRequests } from '../components/FriendRequests'
 import { ChatView } from '../components/ChatView'
@@ -21,6 +21,7 @@ import { ServerBar } from '../components/ServerBar'
 import { ChannelList } from '../components/ChannelList'
 import { ChannelView } from '../components/ChannelView'
 import { CreateServerModal } from '../components/CreateServerModal'
+import { SettingsView } from '../components/SettingsView'
 import { ServerSettings } from '../components/ServerSettings'
 import { VoiceOverlay } from '../components/VoiceOverlay'
 import { signalAppReady } from '../appReady'
@@ -48,16 +49,79 @@ export function Home() {
 
   // UI state
   const [showAdmin, setShowAdmin] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState<Profile | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [showCreateServer, setShowCreateServer] = useState(false)
   const [showServerSettings, setShowServerSettings] = useState(false)
   const [activeDm, setActiveDm] = useState(true)
+  const [serverMembers, setServerMembers] = useState<ServerMember[]>([])
+  const showMemberSidebar = true
+  const [resolvingChat, setResolvingChat] = useState(false)
 
   const call = useCall(user?.id, activeChatId ?? undefined, activeFriend?.id)
   const { userStatuses } = usePresence(user?.id)
 
-  // Resolve URL params
+  // ── Real-time profile subscription ──────────────────────────
+  useEffect(() => {
+    if (!user) return
+    const channel = supabase
+      .channel('profile-updates')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=neq.${user.id}` },
+        () => {
+          refetchFriends()
+          if (activeServerId) fetchServerMembers(activeServerId).then(setServerMembers)
+          if (activeFriend) {
+            supabase.from('profiles').select('*').eq('id', activeFriend.id).single().then(({ data }) => {
+              if (data) setActiveFriend(data)
+            })
+          }
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [user, activeFriend?.id, activeServerId])
+
+  // ── Real-time friend request changes ────────────────────────
+  useEffect(() => {
+    if (!user) return
+    const channel = supabase
+      .channel('friend-request-changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'friend_requests', filter: `receiver_id=eq.${user.id}` },
+        () => { refetchFriends() }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [user])
+
+  // ── Real-time server membership changes ─────────────────────
+  useEffect(() => {
+    if (!user) return
+    const channel = supabase
+      .channel('server-member-changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'server_members', filter: `user_id=eq.${user.id}` },
+        () => { refetchServers() }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [user])
+
+  // ── Fetch server members when active server changes ─────────
+  useEffect(() => {
+    if (!activeServerId) { setServerMembers([]); return }
+    fetchServerMembers(activeServerId).then(setServerMembers)
+    const channel = supabase
+      .channel(`server-members-${activeServerId}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'server_members', filter: `server_id=eq.${activeServerId}` },
+        () => { fetchServerMembers(activeServerId).then(setServerMembers) }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [activeServerId])
+
   const chatIdParam = routeParams.id
   const serverIdParam = routeParams.serverId
   const channelIdParam = routeParams.channelId
@@ -66,10 +130,12 @@ export function Home() {
 
   useEffect(() => {
     if (!user) return
+    console.log('serverResolve: checking serverIdParam', { serverIdParam })
 
     if (serverIdParam) {
       const sid = Number(serverIdParam)
       if (sid) {
+        console.log('serverResolve: setting active server', { sid })
         setActiveServerId(sid)
         setActiveDm(false)
         setActiveChatId(null)
@@ -80,33 +146,59 @@ export function Home() {
   }, [serverIdParam, user])
 
   useEffect(() => {
-    if (!user || !chatIdParam) return
+    if (!user || !chatIdParam) {
+      console.log('chatResolve: skipped — no user or no chatIdParam', { user: !!user, chatIdParam })
+      return
+    }
     const cid = Number(chatIdParam)
-    if (!cid || cid === activeChatId) return
+    if (!cid || cid === activeChatId) {
+      console.log('chatResolve: skipped — invalid cid or already active', { cid, activeChatId })
+      return
+    }
+    console.log('chatResolve: resolving chat', { cid })
+    setResolvingChat(true)
     setActiveDm(true)
     setActiveServerId(null)
     setActiveServer(null)
     setActiveChannelId(null)
+    setActiveChatId(null)
+    setChannels([])
     ;(async () => {
-      const { data } = await supabase
-        .from('chat_members')
-        .select('user_id')
-        .eq('chat_id', cid)
-      if (!data) return
-      const otherId = data.find((m) => m.user_id !== user.id)?.user_id
-      if (!otherId) return
-      const { data: other } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', otherId)
-        .single()
-      if (other) {
-        setActiveFriendId(other.id)
-        setActiveFriend(other)
-        setActiveChatId(cid)
+      try {
+        const { data: members } = await supabase
+          .rpc('get_chat_members', { chat_id_input: cid }) as unknown as { data: { user_id: string }[] | null }
+        console.log('chatResolve: members result', { members })
+        if (!members || members.length === 0) {
+          console.log('chatResolve: no members found')
+          setResolvingChat(false)
+          return
+        }
+        const otherId = members.find((m) => m.user_id !== user.id)?.user_id
+        console.log('chatResolve: otherId', { otherId })
+        if (!otherId) {
+          console.log('chatResolve: setting solo chat')
+          setActiveChatId(cid)
+          setActiveFriendId(user.id)
+          setResolvingChat(false)
+          return
+        }
+        const { data: other } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', otherId)
+          .single()
+        console.log('chatResolve: other profile', { other })
+        if (other) {
+          setActiveFriendId(other.id)
+          setActiveFriend(other)
+          setActiveChatId(cid)
+        }
+      } catch (err) {
+        console.error('chatResolve: error', err)
       }
+      setResolvingChat(false)
     })()
-  }, [chatIdParam, user])
+  }, [chatIdParam, user, activeChatId])
 
   // ── Load server data ──────────────────────────────────────
 
@@ -212,10 +304,12 @@ export function Home() {
   // ── DM actions ────────────────────────────────────────────
 
   async function openDm(friend: Profile) {
+    console.log('openDm: opening DM with', { friendId: friend.id, friendName: friend.display_name || friend.username })
     setActiveFriendId(friend.id)
     setActiveFriend(friend)
     try {
       const chatId = await ensureDmExists(user!.id, friend.id)
+      console.log('openDm: ensureDmExists returned', { chatId })
       if (chatId) {
         setActiveChatId(chatId)
         setActiveDm(true)
@@ -223,6 +317,7 @@ export function Home() {
         setActiveServer(null)
         setActiveChannelId(null)
         navigate(`/chat/${chatId}`, { replace: true })
+        console.log('openDm: navigated to', { url: `/chat/${chatId}` })
       }
     } catch (err) {
       console.error('Error in openDm:', err)
@@ -302,6 +397,100 @@ export function Home() {
   const tag = profile ? `${profile.username}#${profile.uid}` : ''
   const activeChannel = channels.find(c => c.id === activeChannelId)
 
+  function renderMemberGroups() {
+    const grouped: Record<string, { members: ServerMember[]; color: string | null; position: number }> = {}
+    const noRoleMembers: ServerMember[] = []
+
+    for (const m of serverMembers) {
+      if (m.role) {
+        const key = m.role.name
+        if (!grouped[key]) grouped[key] = { members: [], color: m.role.color, position: m.role.position }
+        grouped[key].members.push(m)
+      } else {
+        noRoleMembers.push(m)
+      }
+    }
+
+    const sortedGroups = Object.entries(grouped).sort((a, b) => a[1].position - b[1].position)
+
+    return (
+      <>
+        {sortedGroups.map(([name, group]) => (
+          <div key={name} className="member-role-section">
+            <div className="member-role-label" style={group.color ? { color: group.color } : undefined}>
+              {name} — {group.members.length}
+            </div>
+            {group.members.map(m => {
+              const p = m.profile as Profile | undefined
+              const status = p ? userStatuses[p.id] || 'offline' : 'offline'
+              return (
+                <div key={m.id} className="member-item">
+                  <div style={{ position: 'relative', flexShrink: 0, width: 28, height: 28 }}>
+                    <div className="member-item-avatar">
+                      {p?.avatar_url ? (
+                        <img src={p.avatar_url} alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: p ? getAvatarColor(p.id) : 'var(--surface0)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 700, color: 'var(--base)' }}>
+                          {p ? (p.display_name || p.username || '?')[0].toUpperCase() : '?'}
+                        </div>
+                      )}
+                    </div>
+                    <span className={`presence-dot ${status}`} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="member-item-name" style={{
+                      fontFamily: p?.name_font ? getFontFamily(p.name_font) : undefined,
+                      color: p?.name_color || undefined,
+                      ...((p?.role === 'admin' || p?.role === 'owner') ? { textShadow: `1px 0 0.3px ${p.admin_outline_color || '#cba6f7'}, -1px 0 0.3px ${p.admin_outline_color || '#cba6f7'}, 0 1px 0.3px ${p.admin_outline_color || '#cba6f7'}, 0 -1px 0.3px ${p.admin_outline_color || '#cba6f7'}, 1px 1px 0.3px ${p.admin_outline_color || '#cba6f7'}, -1px 1px 0.3px ${p.admin_outline_color || '#cba6f7'}, -1px -1px 0.3px ${p.admin_outline_color || '#cba6f7'}, 1px -1px 0.3px ${p.admin_outline_color || '#cba6f7'}` } : {}),
+                    }}>
+                      {p?.display_name || p?.username || 'Unknown'}
+                      <AdminBadge role={p?.role} />
+                    </div>
+                    <div className="member-item-status">{status}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ))}
+        {noRoleMembers.length > 0 && (
+          <div className="member-role-section">
+            <div className="member-role-label">Members — {noRoleMembers.length}</div>
+            {noRoleMembers.map(m => {
+              const p = m.profile as Profile | undefined
+              const status = p ? userStatuses[p.id] || 'offline' : 'offline'
+              return (
+                <div key={m.id} className="member-item">
+                  <div style={{ position: 'relative', flexShrink: 0, width: 28, height: 28 }}>
+                    <div className="member-item-avatar">
+                      {p?.avatar_url ? (
+                        <img src={p.avatar_url} alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: p ? getAvatarColor(p.id) : 'var(--surface0)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 700, color: 'var(--base)' }}>
+                          {p ? (p.display_name || p.username || '?')[0].toUpperCase() : '?'}
+                        </div>
+                      )}
+                    </div>
+                    <span className={`presence-dot ${status}`} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="member-item-name" style={{
+                      fontFamily: p?.name_font ? getFontFamily(p.name_font) : undefined,
+                      color: p?.name_color || undefined,
+                    }}>
+                      {p?.display_name || p?.username || 'Unknown'}
+                    </div>
+                    <div className="member-item-status">{status}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </>
+    )
+  }
+
   return (
     <div className="home-layout">
       <ServerBar
@@ -368,13 +557,16 @@ export function Home() {
           </div>
 
           <div className="sidebar-user">
-            {profile?.avatar_url ? (
-              <img src={profile.avatar_url} className="sidebar-user-avatar" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
-            ) : (
-              <div className="sidebar-user-avatar default" style={{ backgroundColor: profile ? getAvatarColor(profile.id) : undefined }}>
-                {(profile?.display_name || profile?.username || '?')[0].toUpperCase()}
-              </div>
-            )}
+            <div className="sidebar-user-avatar-wrap">
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} className="sidebar-user-avatar" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+              ) : (
+                <div className="sidebar-user-avatar default" style={{ backgroundColor: profile ? getAvatarColor(profile.id) : undefined }}>
+                  {(profile?.display_name || profile?.username || '?')[0].toUpperCase()}
+                </div>
+              )}
+              <span className={`presence-dot ${userStatuses[user?.id || ''] || 'online'}`} />
+            </div>
             <div className="sidebar-user-info">
               <span className="sidebar-user-name" style={{
                 fontFamily: profile?.name_font ? getFontFamily(profile.name_font) : undefined,
@@ -400,7 +592,7 @@ export function Home() {
                   </button>
                 )}
               </span>
-              <button className="sidebar-icon-btn" onClick={() => navigate('/settings')}>
+              <button className="sidebar-icon-btn" onClick={() => setShowSettings(true)}>
                 <Icon name="settings" />
               </button>
             </div>
@@ -419,24 +611,42 @@ export function Home() {
             onSettings={() => setShowServerSettings(true)}
           />
           <div className="sidebar-user">
-            {profile?.avatar_url ? (
-              <img src={profile.avatar_url} className="sidebar-user-avatar" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
-            ) : (
-              <div className="sidebar-user-avatar default" style={{ backgroundColor: profile ? getAvatarColor(profile.id) : undefined }}>
-                {(profile?.display_name || profile?.username || '?')[0].toUpperCase()}
-              </div>
-            )}
+            <div className="sidebar-user-avatar-wrap">
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} className="sidebar-user-avatar" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+              ) : (
+                <div className="sidebar-user-avatar default" style={{ backgroundColor: profile ? getAvatarColor(profile.id) : undefined }}>
+                  {(profile?.display_name || profile?.username || '?')[0].toUpperCase()}
+                </div>
+              )}
+              <span className={`presence-dot ${userStatuses[user?.id || ''] || 'online'}`} />
+            </div>
             <div className="sidebar-user-info">
               <span className="sidebar-user-name" style={{
                 fontFamily: profile?.name_font ? getFontFamily(profile.name_font) : undefined,
                 color: profile?.name_color || undefined,
+                ...((profile?.role === 'admin' || profile?.role === 'owner') ? { textShadow: `1px 0 0.3px ${profile.admin_outline_color || '#cba6f7'}, -1px 0 0.3px ${profile.admin_outline_color || '#cba6f7'}, 0 1px 0.3px ${profile.admin_outline_color || '#cba6f7'}, 0 -1px 0.3px ${profile.admin_outline_color || '#cba6f7'}, 1px 1px 0.3px ${profile.admin_outline_color || '#cba6f7'}, -1px 1px 0.3px ${profile.admin_outline_color || '#cba6f7'}, -1px -1px 0.3px ${profile.admin_outline_color || '#cba6f7'}, 1px -1px 0.3px ${profile.admin_outline_color || '#cba6f7'}` } : {}),
               }}>
                 {profile?.display_name || profile?.username}
+                <AdminBadge role={profile?.role} />
               </span>
               <span className="sidebar-user-tag">{tag}</span>
             </div>
             <div className="sidebar-user-right">
-              <button className="sidebar-icon-btn" onClick={() => navigate('/settings')}>
+              <span className="sidebar-user-actions">
+                <button className={`sidebar-icon-btn${call.isMuted ? ' muted' : ''}`} onClick={call.toggleMute} title={call.isMuted ? 'Unmute' : 'Mute'}>
+                  <Icon name={call.isMuted ? 'mic_off' : 'mic'} />
+                </button>
+                <button className="sidebar-icon-btn" onClick={handleSignOut}>
+                  <Icon name="logout" />
+                </button>
+                {isAdmin && (
+                  <button className="sidebar-icon-btn admin-icon-btn" onClick={() => setShowAdmin(true)} title="Admin Panel">
+                    <Icon name="shield" />
+                  </button>
+                )}
+              </span>
+              <button className="sidebar-icon-btn" onClick={() => setShowSettings(true)}>
                 <Icon name="settings" />
               </button>
             </div>
@@ -445,7 +655,11 @@ export function Home() {
       )}
 
       <main className="main-content">
-        {activeDm && activeChatId ? (
+        {activeDm && resolvingChat ? (
+          <div className="empty-state">
+            <div className="loading" style={{ fontSize: '0.85rem' }}>Loading chat...</div>
+          </div>
+        ) : activeDm && activeChatId ? (
           <ChatView
             chatId={activeChatId}
             partner={activeFriend}
@@ -475,6 +689,15 @@ export function Home() {
             <h2>{activeDm ? 'Select a friend to start chatting' : 'Select a channel'}</h2>
           </div>
         )}
+
+        {!activeDm && activeServerId && showMemberSidebar && (
+          <aside className="member-sidebar">
+            <div className="member-sidebar-header">
+              Members — {serverMembers.length}
+            </div>
+            {renderMemberGroups()}
+          </aside>
+        )}
       </main>
 
       <VoiceOverlay
@@ -484,6 +707,14 @@ export function Home() {
       />
 
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
+
+      {showSettings && profile && (
+        <SettingsView
+          profile={profile}
+          onClose={() => setShowSettings(false)}
+          onProfileUpdate={(p) => setProfile(p)}
+        />
+      )}
 
       <ConfirmDialog
         open={!!confirmRemove}

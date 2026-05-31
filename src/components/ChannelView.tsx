@@ -15,6 +15,7 @@ import type { Profile, Message, Channel } from '../types'
 import { Icon } from './Icon'
 import { EmojiPicker } from './EmojiPicker'
 import { AdminBadge } from './AdminBadge'
+import { InvitePreview } from './InvitePreview'
 
 interface Props {
   channel: Channel
@@ -236,7 +237,8 @@ export function ChannelView({ channel, onClose, canManageMessages }: Props) {
           ) : (
             messages.map((msg, i) => {
               const prev = messages[i - 1]
-              const isSameSender = prev && prev.sender_id === msg.sender_id
+              const isSameSender = prev && prev.sender_id === msg.sender_id &&
+                new Date(msg.created_at).getTime() - new Date(prev.created_at).getTime() < 600000
               const time = new Date(msg.created_at).toLocaleTimeString([], {
                 hour: '2-digit', minute: '2-digit',
               })
@@ -306,6 +308,7 @@ export function ChannelView({ channel, onClose, canManageMessages }: Props) {
                           </div>
                         )}
                         <FilePreview msg={msg} />
+                        <InvitePreview content={msg.content} />
                       </>
                     )}
                     <div className="msg-actions-row">

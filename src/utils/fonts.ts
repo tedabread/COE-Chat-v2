@@ -1,26 +1,30 @@
 export interface FontOption {
   name: string
+  label: string
   category: 'sans-serif' | 'serif' | 'monospace'
   googleFont: string | null
   fallback: string
+  public: boolean
 }
 
 export const fontList: FontOption[] = [
-  { name: 'GoogleSansCodeNF', category: 'monospace', googleFont: null, fallback: 'monospace' },
-  { name: 'Geologica', category: 'sans-serif', googleFont: 'Geologica:400,600,700', fallback: 'sans-serif' },
-  { name: 'Inter', category: 'sans-serif', googleFont: 'Inter:400,600,700', fallback: 'sans-serif' },
-  { name: 'DM Sans', category: 'sans-serif', googleFont: 'DM+Sans:400,600,700', fallback: 'sans-serif' },
-  { name: 'Manrope', category: 'sans-serif', googleFont: 'Manrope:400,600,700', fallback: 'sans-serif' },
-  { name: 'Space Grotesk', category: 'sans-serif', googleFont: 'Space+Grotesk:400,600,700', fallback: 'sans-serif' },
-  { name: 'Source Serif 4', category: 'serif', googleFont: 'Source+Serif+4:400,600,700', fallback: 'serif' },
-  { name: 'Century', category: 'serif', googleFont: null, fallback: 'serif' },
-  { name: 'Playfair Display', category: 'serif', googleFont: 'Playfair+Display:400,600,700', fallback: 'serif' },
-  { name: 'Lora', category: 'serif', googleFont: 'Lora:400,600,700', fallback: 'serif' },
-  { name: 'Merriweather', category: 'serif', googleFont: 'Merriweather:400,700', fallback: 'serif' },
-  { name: 'JetBrains Mono', category: 'monospace', googleFont: 'JetBrains+Mono:400,600,700', fallback: 'monospace' },
-  { name: 'Fira Code', category: 'monospace', googleFont: 'Fira+Code:400,600,700', fallback: 'monospace' },
-  { name: 'IBM Plex Mono', category: 'monospace', googleFont: 'IBM+Plex+Mono:400,600,700', fallback: 'monospace' },
+  { name: 'GoogleSansCodeNF', label: 'Default', category: 'monospace', googleFont: null, fallback: 'monospace', public: true },
+  { name: 'Geologica', label: 'Sans-Serif', category: 'sans-serif', googleFont: 'Geologica:400,600,700', fallback: 'sans-serif', public: true },
+  { name: 'Inter', label: 'Inter', category: 'sans-serif', googleFont: 'Inter:400,600,700', fallback: 'sans-serif', public: false },
+  { name: 'DM Sans', label: 'DM Sans', category: 'sans-serif', googleFont: 'DM+Sans:400,600,700', fallback: 'sans-serif', public: false },
+  { name: 'Manrope', label: 'Manrope', category: 'sans-serif', googleFont: 'Manrope:400,600,700', fallback: 'sans-serif', public: false },
+  { name: 'Space Grotesk', label: 'Space Grotesk', category: 'sans-serif', googleFont: 'Space+Grotesk:400,600,700', fallback: 'sans-serif', public: false },
+  { name: 'Source Serif 4', label: 'Source Serif 4', category: 'serif', googleFont: 'Source+Serif+4:400,600,700', fallback: 'serif', public: false },
+  { name: 'Century', label: 'Century', category: 'serif', googleFont: null, fallback: 'serif', public: false },
+  { name: 'Playfair Display', label: 'Playfair Display', category: 'serif', googleFont: 'Playfair+Display:400,600,700', fallback: 'serif', public: false },
+  { name: 'Lora', label: 'Lora', category: 'serif', googleFont: 'Lora:400,600,700', fallback: 'serif', public: false },
+  { name: 'Merriweather', label: 'Serif', category: 'serif', googleFont: 'Merriweather:400,700', fallback: 'serif', public: true },
+  { name: 'JetBrains Mono', label: 'JetBrains Mono', category: 'monospace', googleFont: 'JetBrains+Mono:400,600,700', fallback: 'monospace', public: false },
+  { name: 'Fira Code', label: 'Fira Code', category: 'monospace', googleFont: 'Fira+Code:400,600,700', fallback: 'monospace', public: false },
+  { name: 'IBM Plex Mono', label: 'IBM Plex Mono', category: 'monospace', googleFont: 'IBM+Plex+Mono:400,600,700', fallback: 'monospace', public: false },
 ]
+
+export const publicFonts = fontList.filter(f => f.public)
 
 const loadedFonts = new Set<string>(['GoogleSansCodeNF', 'Century'])
 let preconnectAdded = false
