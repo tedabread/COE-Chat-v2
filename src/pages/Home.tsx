@@ -340,6 +340,8 @@ export function Home() {
 
   // ── Page visibility ──────────────────────────────────────
 
+  const prevHiddenRef = useRef(false)
+
   useEffect(() => {
     function handleVisibility() {
       setPageHidden(document.visibilityState === 'hidden')
@@ -347,6 +349,19 @@ export function Home() {
     document.addEventListener('visibilitychange', handleVisibility)
     return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [])
+
+  useEffect(() => {
+    const wasHidden = prevHiddenRef.current
+    prevHiddenRef.current = pageHidden
+    if (wasHidden && !pageHidden) {
+      if (activeFriendId && chatIdForFriend[activeFriendId]) {
+        markChatRead(chatIdForFriend[activeFriendId])
+      }
+      if (activeChannelId) {
+        markChannelRead(activeChannelId)
+      }
+    }
+  }, [pageHidden])
 
   // ── Document title for unread count ──────────────────────
 
