@@ -11,6 +11,7 @@ ALTER TABLE profiles ADD CONSTRAINT profiles_role_check
 
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user';
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS admin_outline_color TEXT DEFAULT '#cba6f7';
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_seen TIMESTAMPTZ;
 
 -- Seed owner + admin
 UPDATE profiles SET role = 'owner' WHERE username = 'pidgeon-religion';
@@ -123,6 +124,25 @@ CREATE POLICY "Admins can read all friend_requests" ON friend_requests
 DROP POLICY IF EXISTS "Admins can delete friend_requests" ON friend_requests;
 CREATE POLICY "Admins can delete friend_requests" ON friend_requests
   FOR DELETE USING (is_user_admin(auth.uid()));
+
+-- User-level policies for friend_requests
+
+DROP POLICY IF EXISTS "Users can send friend requests" ON friend_requests;
+CREATE POLICY "Users can send friend requests" ON friend_requests
+  FOR INSERT WITH CHECK (sender_id = auth.uid());
+
+DROP POLICY IF EXISTS "Users can view their friend requests" ON friend_requests;
+CREATE POLICY "Users can view their friend requests" ON friend_requests
+  FOR SELECT USING (sender_id = auth.uid() OR receiver_id = auth.uid());
+
+DROP POLICY IF EXISTS "Users can update their friend requests" ON friend_requests;
+CREATE POLICY "Users can update their friend requests" ON friend_requests
+  FOR UPDATE USING (sender_id = auth.uid() OR receiver_id = auth.uid())
+  WITH CHECK (sender_id = auth.uid() OR receiver_id = auth.uid());
+
+DROP POLICY IF EXISTS "Users can delete their friend requests" ON friend_requests;
+CREATE POLICY "Users can delete their friend requests" ON friend_requests
+  FOR DELETE USING (sender_id = auth.uid() OR receiver_id = auth.uid());
 
 DROP POLICY IF EXISTS "Admins can read all chats" ON chats;
 CREATE POLICY "Admins can read all chats" ON chats
@@ -311,6 +331,11 @@ CREATE POLICY "Users can join via invite" ON server_members
     AND NOT is_server_member(auth.uid(), server_id)
   );
 
+-- Allow users to delete their own membership (leave server)
+DROP POLICY IF EXISTS "Users can leave servers" ON server_members;
+CREATE POLICY "Users can leave servers" ON server_members
+  FOR DELETE USING (user_id = auth.uid());
+
 -- ── CHANNELS ───────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS channels (
@@ -464,3 +489,108 @@ CREATE TRIGGER trg_create_default_server_roles
 -- END;
 -- $$;
 -- SELECT nuke_all_servers();
+
+-- ── Enable Realtime for profiles table ──────────────────────
+-- Required for postgres_changes subscriptions (profile-updates, presence)
+-- Run in Supabase SQL editor or apply via dashboard: Replication → profiles
+
+-- Create the publication if it doesn't exist yet
+DO $$
+BEGIN
+  CREATE PUBLICATION supabase_realtime;
+EXCEPTION WHEN duplicate_object THEN
+  NULL;
+END;
+$$;
+
+-- Add profiles to the publication
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE profiles;
+EXCEPTION WHEN duplicate_object THEN
+  NULL;
+END;
+$$;
+
+-- Add friend_requests to the publication (for real-time friend request & friend list updates)
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE friend_requests;
+EXCEPTION WHEN duplicate_object THEN
+  NULL;
+END;
+$$;
+
+-- Add server_members to the publication (for real-time server membership changes)
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE server_members;
+EXCEPTION WHEN duplicate_object THEN
+  NULL;
+END;
+$$;
+
+-- ── RPC: update own last_seen (bypasses RLS) ─────────────────
+
+CREATE OR REPLACE FUNCTION update_last_seen()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE profiles SET last_seen = NOW() WHERE id = auth.uid();
+END;
+$$;
+
+-- ── RPC: mark offline immediately (called from beforeunload) ──
+
+CREATE OR REPLACE FUNCTION go_offline()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE profiles SET last_seen = NULL WHERE id = auth.uid();
+END;
+$$;
+
+-- ── RPC: mark idle (set last_seen to 90s ago, called on tab hide) ──
+
+CREATE OR REPLACE FUNCTION set_idle()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE profiles SET last_seen = NOW() - INTERVAL '90 seconds' WHERE id = auth.uid();
+END;
+$$;
+
+-- ── RPC: delete DM chat + all messages between two users ──
+
+CREATE OR REPLACE FUNCTION delete_dm(other_user UUID)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  chat_id_var INT;
+BEGIN
+  SELECT cm.chat_id INTO chat_id_var
+  FROM chat_members cm
+  WHERE cm.user_id IN (auth.uid(), other_user)
+  GROUP BY cm.chat_id
+  HAVING COUNT(*) = 2
+  LIMIT 1;
+
+  IF chat_id_var IS NOT NULL THEN
+    DELETE FROM messages WHERE chat_id = chat_id_var;
+    DELETE FROM chat_members WHERE chat_id = chat_id_var;
+    DELETE FROM chats WHERE id = chat_id_var;
+  END IF;
+END;
+$$;

@@ -11,6 +11,7 @@ interface Props {
   server: Server
   onClose: () => void
   onUpdate: () => void
+  onLeave?: () => void
 }
 
 type Tab = 'overview' | 'members' | 'roles' | 'channels'
@@ -33,7 +34,7 @@ const permLabels: Record<string, string> = {
   manage_roles: 'Manage Roles',
 }
 
-export function ServerSettings({ server, onClose, onUpdate }: Props) {
+export function ServerSettings({ server, onClose, onUpdate, onLeave }: Props) {
   const [tab, setTab] = useState<Tab>('overview')
   const [name, setName] = useState(server.name)
   const [members, setMembers] = useState<ServerMember[]>([])
@@ -43,6 +44,13 @@ export function ServerSettings({ server, onClose, onUpdate }: Props) {
   const [newChannelType, setNewChannelType] = useState<'text' | 'voice'>('text')
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [savingName, setSavingName] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined)
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) setCurrentUserId(data.user.id)
+    })
+  }, [])
 
   useEffect(() => {
     fetchServerMembers(server.id).then(setMembers)
@@ -119,6 +127,14 @@ export function ServerSettings({ server, onClose, onUpdate }: Props) {
     else { setChannels(prev => prev.filter(c => c.id !== channelId)); onUpdate() }
   }
 
+  async function leaveServer() {
+    if (!currentUserId) return
+    if (!confirm(`Leave "${server.name}"? Your messages in this server will remain visible to others.`)) return
+    const { error } = await supabase.from('server_members').delete().eq('server_id', server.id).eq('user_id', currentUserId)
+    if (error) setMsg({ type: 'error', text: error.message })
+    else onLeave?.()
+  }
+
   const origin = window.location.origin
   const inviteLink = `${origin}/invite/${server.id}`
 
@@ -155,6 +171,14 @@ export function ServerSettings({ server, onClose, onUpdate }: Props) {
                   Copy
                 </button>
               </div>
+              {currentUserId && currentUserId !== server.owner_id && (
+                <>
+                  <hr style={{ margin: '1.5rem 0', borderColor: 'var(--surface0)' }} />
+                  <button className="settings-btn" style={{ background: 'var(--red)', color: 'var(--base)' }} onClick={leaveServer}>
+                    Leave Server
+                  </button>
+                </>
+              )}
             </div>
           )}
 

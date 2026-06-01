@@ -21,6 +21,7 @@ interface Props {
   channel: Channel
   onClose: () => void
   canManageMessages: boolean
+  userDisplayNames?: Record<string, string>
 }
 
 const FLAG_RE = /:flag-([a-z0-9-]+):/g
@@ -96,7 +97,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
 }
 
-export function ChannelView({ channel, onClose, canManageMessages }: Props) {
+export function ChannelView({ channel, onClose, canManageMessages, userDisplayNames }: Props) {
   const { messages, loading, sendMessage, editMessage, deleteMessage } = useChannelMessages(channel.id)
   const [input, setInput] = useState('')
   const [showEmoji, setShowEmoji] = useState(false)
@@ -129,6 +130,28 @@ export function ChannelView({ channel, onClose, canManageMessages }: Props) {
       if (msg.profile?.message_font) loadFont(msg.profile.message_font)
     }
   }, [messages])
+
+  // Global keydown → focus input
+  useEffect(() => {
+    function handleGlobalKeyDown(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.key === 'Escape' || e.key === 'Enter' || e.key === 'Tab') return
+      if (e.key.length !== 1) return
+      e.preventDefault()
+      const el = inputRef.current
+      if (!el) return
+      el.focus()
+      const start = el.selectionStart ?? input.length
+      const newVal = input.slice(0, start) + e.key + input.slice(start)
+      setInput(newVal)
+      requestAnimationFrame(() => {
+        el.selectionStart = el.selectionEnd = start + e.key.length
+      })
+    }
+    document.addEventListener('keydown', handleGlobalKeyDown)
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [input])
 
   const isTyping = inputFocused && input.trim().length > 0
   useEffect(() => { setTyping(isTyping) }, [isTyping])
@@ -339,7 +362,7 @@ export function ChannelView({ channel, onClose, canManageMessages }: Props) {
         <form className="message-input" onSubmit={e => { e.preventDefault(); handleSend() }}>
           {typingUserIds.length > 0 && (
             <div className="typing-indicator">
-              <em>Someone</em> is typing...
+              {typingUserIds.map((uid) => userDisplayNames?.[uid] || 'Someone').filter((v, i, a) => a.indexOf(v) === i).join(', ')} is typing...
             </div>
           )}
           {replyTo && (

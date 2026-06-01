@@ -57,11 +57,12 @@ export function useFriends(userId: string | undefined) {
 
     if (!target) return { error: { message: 'User not found' } }
 
-    return supabase.from('friend_requests').insert({
-      sender_id: userId,
-      receiver_id: target.id,
-      status: 'pending',
-    })
+    return supabase
+      .from('friend_requests')
+      .upsert(
+        { sender_id: userId, receiver_id: target.id, status: 'pending' },
+        { onConflict: 'sender_id,receiver_id' },
+      )
   }
 
   async function acceptRequest(requestId: number) {
@@ -96,10 +97,12 @@ export function useFriends(userId: string | undefined) {
       .delete()
       .eq('status', 'accepted')
       .or(`and(sender_id.eq.${userId},receiver_id.eq.${friendId}),and(sender_id.eq.${friendId},receiver_id.eq.${userId})`)
+    // Delete the shared DM chat + messages for both users
+    await supabase.rpc('delete_dm', { other_user: friendId })
     fetchFriends()
   }
 
-  return { friends, requests, loading, sendRequest, acceptRequest, rejectRequest, removeFriend, refetch: fetchFriends }
+  return { friends, requests, loading, sendRequest, acceptRequest, rejectRequest, removeFriend, refetch: fetchFriends, refetchRequests: fetchRequests }
 }
 
 export async function ensureDmExists(userId: string, otherId: string): Promise<number | null> {

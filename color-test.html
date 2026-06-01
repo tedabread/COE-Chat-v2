@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Colour Palette Tester</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: var(--base);
+    color: var(--text);
+    transition: background 0.2s, color 0.2s;
+  }
+
+  /* ── Layout ── */
+  .app { display: flex; height: 100%; overflow: hidden; }
+
+  /* ── Server bar ── */
+  .server-bar {
+    width: 60px; min-width: 60px;
+    background: var(--crust);
+    display: flex; flex-direction: column; align-items: center;
+    padding: 0.6rem 0; gap: 0.4rem;
+    border-right: 1px solid var(--surface0);
+    overflow-y: auto;
+  }
+  .server-bar-top { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
+  .server-bar-bottom { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
+  .srv {
+    width: 44px; height: 44px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: border-radius 0.15s, background 0.15s;
+    background: var(--surface0); color: var(--overlay1);
+    font-size: 1.1rem; font-weight: 700; overflow: hidden;
+    flex-shrink: 0;
+  }
+  .srv:hover { border-radius: 30%; background: var(--surface1); color: var(--text); }
+  .srv.active { border-radius: 30%; background: var(--blue); color: var(--base); }
+  .srv.dm { color: var(--green); }
+  .srv.dm.active { color: var(--base); }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: 280px; background: var(--mantle);
+    display: flex; flex-direction: column; min-height: 0;
+    border-right: 1px solid var(--surface0);
+  }
+  .sidebar-top { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .search-box {
+    margin: 0.6rem; padding: 0.5rem 0.7rem; border-radius: 8px;
+    border: none; background: var(--surface0); color: var(--text);
+    font-size: 0.8rem; font-family: inherit;
+    outline: none; transition: background 0.15s;
+  }
+  .search-box::placeholder { color: var(--overlay0); }
+  .search-box:focus { background: var(--surface1); }
+
+  /* friend requests */
+  .fr-section { margin: 0 0.6rem 0.3rem; }
+  .fr-section h3 { font-size: 0.75rem; color: var(--subtext0); margin-bottom: 0.3rem; display: flex; align-items: center; gap: 0.3rem; }
+  .fr-item { display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.5rem; border-radius: 6px; background: var(--surface0); margin-bottom: 0.25rem; }
+  .fr-item span { flex: 1; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fr-btn { background: none; border: none; cursor: pointer; color: var(--overlay1); font-size: 0.8rem; padding: 0.15rem; border-radius: 4px; transition: color 0.15s; }
+  .fr-btn:hover { color: var(--text); }
+  .fr-btn.accept:hover { color: var(--green); }
+  .fr-btn.reject:hover { color: var(--red); }
+
+  .list-header { display: flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.6rem 0.3rem; font-size: 0.75rem; color: var(--subtext0); }
+  .friend-list { flex: 1; overflow-y: auto; padding: 0 0.4rem; }
+  .friend-item {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.4rem 0.5rem; border-radius: 8px; cursor: pointer;
+    transition: background 0.15s; margin-bottom: 0.1rem;
+  }
+  .friend-item:hover { background: var(--surface0); }
+  .friend-item.active { background: var(--surface1); }
+  .friend-avatar {
+    width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.85rem; font-weight: 700; position: relative;
+  }
+  .friend-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+  .friend-info { flex: 1; min-width: 0; }
+  .friend-name { font-size: 0.85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .friend-status { font-size: 0.7rem; color: var(--overlay0); }
+  .friend-tag { font-size: 0.7rem; color: var(--overlay0); flex-shrink: 0; }
+
+  /* presence dot */
+  .pdot {
+    position: absolute; bottom: -1px; right: -1px;
+    width: 11px; height: 11px; border-radius: 50%;
+    border: 2px solid var(--mantle);
+  }
+  .pdot.online { background: var(--green); }
+  .pdot.idle { background: var(--yellow); }
+  .pdot.offline { background: var(--overlay0); }
+
+  /* sidebar user */
+  .sidebar-user {
+    flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 0.6rem; border-top: 1px solid var(--surface0);
+  }
+  .sidebar-user-avatar {
+    width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; font-weight: 700; position: relative;
+  }
+  .sidebar-user-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .sidebar-user-name { font-size: 0.8rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sidebar-user-tag { font-size: 0.65rem; color: var(--overlay0); }
+
+  /* ── Main content ── */
+  .main-content { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+  .chat-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .chat-header {
+    display: flex; align-items: center; padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--surface0); background: var(--mantle); flex-shrink: 0;
+    gap: 0.5rem;
+  }
+  .close-btn {
+    background: var(--surface0); border: none; color: var(--overlay0);
+    cursor: pointer; font-size: 0.85rem; width: 1.8rem; height: 1.8rem;
+    border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;
+    transition: background 0.15s, color 0.15s; flex-shrink: 0;
+  }
+  .close-btn:hover { background: var(--surface1); color: var(--text); }
+  .partner-name { font-size: 0.9rem; font-weight: 600; }
+  .chat-header-spacer { flex: 1; }
+  .call-btn {
+    background: var(--surface0); border: none; color: var(--overlay0);
+    cursor: pointer; font-size: 0.85rem; width: 1.8rem; height: 1.8rem;
+    border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;
+    transition: background 0.15s, color 0.15s;
+  }
+  .call-btn:hover { background: var(--green); color: var(--base); }
+
+  /* messages */
+  .messages {
+    flex: 1; min-height: 0; overflow-y: auto;
+    padding: 1rem 0.5rem 1rem 1rem;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    background: var(--base);
+  }
+  .msg-row { display: flex; gap: 0.5rem; max-width: 90%; margin-top: 0.3rem; align-items: flex-start; }
+  .msg-row:first-child { margin-top: 0; }
+  .msg-row.same-sender { margin-top: 0.08rem; }
+  .msg-avatar { width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700; }
+  .msg-body { flex: 1; min-width: 0; }
+  .msg-header { display: flex; align-items: baseline; gap: 0.4rem; }
+  .msg-name { font-size: 0.82rem; font-weight: 600; }
+  .msg-time { font-size: 0.6rem; color: var(--overlay0); }
+  .msg-text { font-size: 0.85rem; line-height: 1.4; margin-top: 0.1rem; word-wrap: break-word; }
+
+  /* input */
+  .input-area { flex-shrink: 0; background: var(--mantle); border-top: 1px solid var(--surface0); }
+  .input-row { display: flex; padding: 7px 1rem; gap: 0.4rem; align-items: center; }
+  .msg-input {
+    flex: 1; padding: 0.55rem 0.75rem; border-radius: 8px;
+    border: none; background: var(--surface0); color: var(--text);
+    font-size: 0.85rem; font-family: inherit; outline: none;
+    transition: background 0.15s;
+  }
+  .msg-input::placeholder { color: var(--overlay0); }
+  .msg-input:focus { background: var(--surface1); }
+  .input-btn {
+    background: var(--surface0); border: none; color: var(--overlay0);
+    cursor: pointer; font-size: 0.9rem; width: 2rem; height: 2rem;
+    border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;
+    transition: background 0.15s, color 0.15s; flex-shrink: 0;
+  }
+  .input-btn:hover { background: var(--surface1); color: var(--text); }
+  .send-btn { background: var(--blue); color: var(--base); }
+  .send-btn:hover { opacity: 0.85; }
+
+  /* typing */
+  .typing { padding: 0.3rem 1rem; font-size: 0.72rem; color: var(--overlay0); background: var(--mantle); }
+
+  /* member sidebar */
+  .member-sidebar {
+    width: 200px; flex-shrink: 0;
+    background: var(--mantle); border-left: 1px solid var(--surface0);
+    display: flex; flex-direction: column; overflow-y: auto;
+  }
+  .member-header { padding: 0.6rem; font-size: 0.75rem; font-weight: 600; color: var(--subtext0); border-bottom: 1px solid var(--surface0); }
+  .member-list { padding: 0.4rem; }
+  .member-item { display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem; border-radius: 6px; }
+  .member-avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 700; position: relative; }
+  .member-name { font-size: 0.78rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
+  /* ── Scheme selector overlay ── */
+  .overlay {
+    display: none;
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(6px);
+    align-items: center; justify-content: center;
+  }
+  .overlay.open { display: flex; }
+  .picker {
+    background: var(--mantle); border-radius: 16px;
+    padding: 1.5rem; max-width: 640px; width: 90%;
+    max-height: 85vh; overflow-y: auto;
+    box-shadow: 0 16px 64px rgba(0,0,0,0.3);
+    animation: fadeUp 0.2s ease-out;
+  }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  .picker h2 { font-size: 1rem; margin-bottom: 0.3rem; color: var(--text); }
+  .picker p { font-size: 0.75rem; color: var(--overlay0); margin-bottom: 1rem; }
+  .scheme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.6rem; }
+  .scheme-card {
+    background: var(--surface0); border-radius: 10px; padding: 0.7rem;
+    cursor: pointer; transition: background 0.15s, transform 0.15s;
+    border: 2px solid transparent;
+  }
+  .scheme-card:hover { background: var(--surface1); transform: translateY(-2px); }
+  .scheme-card.active { border-color: var(--blue); }
+  .scheme-preview {
+    display: flex; gap: 3px; margin-bottom: 0.5rem; height: 28px; align-items: stretch;
+  }
+  .scheme-preview span {
+    flex: 1; border-radius: 4px;
+  }
+  .scheme-name { font-size: 0.78rem; font-weight: 600; }
+  .scheme-type { font-size: 0.65rem; color: var(--overlay0); margin-top: 0.1rem; }
+
+  .close-overlay-btn {
+    margin-top: 1rem; padding: 0.4rem 1rem;
+    background: var(--surface0); border: none; border-radius: 8px;
+    color: var(--text); cursor: pointer; font-size: 0.8rem;
+    transition: background 0.15s;
+  }
+  .close-overlay-btn:hover { background: var(--surface1); }
+
+  .hint {
+    position: fixed; bottom: 1rem; right: 1rem; z-index: 100;
+    font-size: 0.7rem; color: var(--overlay0);
+    background: var(--mantle); padding: 0.3rem 0.6rem;
+    border-radius: 6px; border: 1px solid var(--surface0);
+    opacity: 0.7; pointer-events: none;
+  }
+  .hint kbd {
+    background: var(--surface0); padding: 0.1rem 0.3rem;
+    border-radius: 3px; font-family: inherit;
+  }
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- Server bar -->
+  <nav class="server-bar">
+    <div class="server-bar-top">
+      <div class="srv dm active">@</div>
+      <div class="srv">G</div>
+      <div class="srv">L</div>
+      <div class="srv">D</div>
+    </div>
+    <div class="server-bar-bottom">
+      <div class="srv" style="color:var(--green);font-size:1.3rem;">+</div>
+    </div>
+  </nav>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-top">
+      <input class="search-box" type="text" placeholder="Search friends..." disabled />
+      <div class="fr-section">
+        <h3>Friend Requests</h3>
+        <div class="fr-item">
+          <span>max_payne</span>
+          <button class="fr-btn accept">&#10003;</button>
+          <button class="fr-btn reject">&#10005;</button>
+        </div>
+      </div>
+
+      <div class="list-header">Friends (3)</div>
+      <div class="friend-list">
+
+        <div class="friend-item active">
+          <div class="friend-avatar" style="background:var(--pink);color:var(--base);">
+            P
+            <span class="pdot online"></span>
+          </div>
+          <div class="friend-info">
+            <div class="friend-name" style="color:var(--pink);">Pidgeon Religion</div>
+            <div class="friend-status">Online</div>
+          </div>
+          <span class="friend-tag">#1</span>
+        </div>
+
+        <div class="friend-item">
+          <div class="friend-avatar" style="background:var(--blue);color:var(--base);">
+            R
+            <span class="pdot online"></span>
+          </div>
+          <div class="friend-info">
+            <div class="friend-name" style="color:var(--blue);">Raymond</div>
+            <div class="friend-status">Online</div>
+          </div>
+          <span class="friend-tag">#2</span>
+        </div>
+
+        <div class="friend-item">
+          <div class="friend-avatar" style="background:var(--green);color:var(--base);">
+            M
+            <span class="pdot idle"></span>
+          </div>
+          <div class="friend-info">
+            <div class="friend-name" style="color:var(--green);">max_payne</div>
+            <div class="friend-status">Idle</div>
+          </div>
+          <span class="friend-tag">#3</span>
+        </div>
+
+        <div class="friend-item">
+          <div class="friend-avatar" style="background:var(--overlay0);color:var(--base);">
+            A
+            <span class="pdot offline"></span>
+          </div>
+          <div class="friend-info">
+            <div class="friend-name">Away_Bot</div>
+            <div class="friend-status">Offline</div>
+          </div>
+          <span class="friend-tag">#4</span>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="sidebar-user">
+      <div class="sidebar-user-avatar" style="background:var(--mauve);color:var(--base);">
+        Y
+        <span class="pdot online"></span>
+      </div>
+      <div class="sidebar-user-info">
+        <div class="sidebar-user-name">you</div>
+        <div class="sidebar-user-tag">#0</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main-content">
+    <div class="chat-panel">
+      <div class="chat-header">
+        <button class="close-btn">&#10005;</button>
+        <span class="partner-name" style="color:var(--pink);">Pidgeon Religion</span>
+        <div class="chat-header-spacer"></div>
+        <button class="call-btn">&#128222;</button>
+      </div>
+
+      <div class="messages">
+        <!-- self msg -->
+        <div class="msg-row">
+          <div class="msg-avatar" style="background:var(--mauve);color:var(--base);">Y</div>
+          <div class="msg-body">
+            <div class="msg-header">
+              <span class="msg-name">you</span>
+              <span class="msg-time">2:01 PM</span>
+            </div>
+            <div class="msg-text">hey how's it going?</div>
+          </div>
+        </div>
+
+        <!-- partner msg -->
+        <div class="msg-row">
+          <div class="msg-avatar" style="background:var(--pink);color:var(--base);">P</div>
+          <div class="msg-body">
+            <div class="msg-header">
+              <span class="msg-name" style="color:var(--pink);">Pidgeon Religion</span>
+              <span class="msg-time">2:01 PM</span>
+            </div>
+            <div class="msg-text">pretty good! working on the colour palette for v1</div>
+          </div>
+        </div>
+
+        <!-- same sender group -->
+        <div class="msg-row same-sender">
+          <div class="msg-avatar"></div>
+          <div class="msg-body">
+            <div class="msg-text">what do you think of this scheme?</div>
+          </div>
+        </div>
+
+        <!-- self msg -->
+        <div class="msg-row">
+          <div class="msg-avatar" style="background:var(--mauve);color:var(--base);">Y</div>
+          <div class="msg-body">
+            <div class="msg-header">
+              <span class="msg-name">you</span>
+              <span class="msg-time">2:02 PM</span>
+            </div>
+            <div class="msg-text">it looks clean! maybe the surfaces could use a bit more contrast though</div>
+          </div>
+        </div>
+
+        <!-- partner msg with code -->
+        <div class="msg-row">
+          <div class="msg-avatar" style="background:var(--pink);color:var(--base);">P</div>
+          <div class="msg-body">
+            <div class="msg-header">
+              <span class="msg-name" style="color:var(--pink);">Pidgeon Religion</span>
+              <span class="msg-time">2:03 PM</span>
+            </div>
+            <div class="msg-text">yeah, i was thinking about bumping up the overlay values a bit. also trying out a warmer accent tone</div>
+          </div>
+        </div>
+
+        <!-- image msg placeholder -->
+        <div class="msg-row">
+          <div class="msg-avatar" style="background:var(--pink);color:var(--base);">P</div>
+          <div class="msg-body">
+            <div class="msg-header">
+              <span class="msg-name" style="color:var(--pink);">Pidgeon Religion</span>
+              <span class="msg-time">2:04 PM</span>
+            </div>
+            <div class="msg-text">check this mockup:</div>
+            <div style="margin-top:0.3rem;border-radius:8px;overflow:hidden;background:var(--surface0);max-width:260px;height:120px;display:flex;align-items:center;justify-content:center;color:var(--overlay1);font-size:0.75rem;">[image preview]</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- typing indicator -->
+      <div class="typing"><em>Pidgeon Religion</em> is typing...</div>
+
+      <div class="input-area">
+        <div class="input-row">
+          <button class="input-btn">&#128116;</button>
+          <button class="input-btn">&#128512;</button>
+          <input class="msg-input" type="text" placeholder="Message Pidgeon Religion" disabled />
+          <button class="input-btn send-btn">&#10148;</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Member sidebar -->
+    <aside class="member-sidebar">
+      <div class="member-header">Members — 4</div>
+      <div class="member-list">
+        <div class="member-item">
+          <div class="member-avatar" style="background:var(--mauve);color:var(--base);">Y<span class="pdot online"></span></div>
+          <span class="member-name" style="color:var(--mauve);">you</span>
+        </div>
+        <div class="member-item">
+          <div class="member-avatar" style="background:var(--pink);color:var(--base);">P<span class="pdot online"></span></div>
+          <span class="member-name" style="color:var(--pink);">Pidgeon Religion</span>
+        </div>
+        <div class="member-item">
+          <div class="member-avatar" style="background:var(--blue);color:var(--base);">R<span class="pdot online"></span></div>
+          <span class="member-name" style="color:var(--blue);">Raymond</span>
+        </div>
+        <div class="member-item">
+          <div class="member-avatar" style="background:var(--overlay0);color:var(--base);">A<span class="pdot offline"></span></div>
+          <span class="member-name">Away_Bot</span>
+        </div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<div class="hint">Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> to change colour scheme</div>
+
+<!-- Colour scheme selector overlay -->
+<div class="overlay" id="overlay">
+  <div class="picker">
+    <h2>Colour Schemes</h2>
+    <p>Click a scheme to preview it live. Results are saved to localStorage.</p>
+    <div class="scheme-grid" id="grid"></div>
+    <div style="text-align:center;margin-top:1rem;">
+      <button class="close-overlay-btn" id="closeOverlay">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Colour scheme definitions — each with all 26 CSS variables
+// ============================================================
+const SCHEMES = {
+  // ── Azure: logo-inspired blue accent on dark/light ──
+  azureDark: {
+    label: 'Azure Dark',
+    type: 'Dark',
+    desc: 'Blue #007acc on very dark bg — you chose this',
+    vars: {
+      '--crust': '#101214', '--mantle': '#131618', '--base': '#171b1d',
+      '--surface0': '#1e2326', '--surface1': '#272d30', '--surface2': '#31383c',
+      '--overlay0': '#454d52', '--overlay1': '#5a646a', '--overlay2': '#707b82',
+      '--subtext0': '#87939b', '--subtext1': '#a0adb6', '--text': '#ffffff',
+      '--rosewater': '#e8c8c0', '--flamingo': '#dcaaaa', '--pink': '#d09abb',
+      '--mauve': '#b086d9', '--red': '#e05858', '--maroon': '#cc7878',
+      '--peach': '#d8945a', '--yellow': '#d4aa50', '--green': '#74b868',
+      '--teal': '#58b0a4', '--sky': '#5ebaca', '--sapphire': '#4ea0b8',
+      '--blue': '#007acc', '--lavender': '#8888d0',
+    }
+  },
+  azureLight: {
+    label: 'Azure Light',
+    type: 'Light',
+    desc: 'Same blue on white bg, black text — you chose this',
+    vars: {
+      '--crust': '#ebebeb', '--mantle': '#f5f5f5', '--base': '#ffffff',
+      '--surface0': '#dfdfdf', '--surface1': '#d0d0d0', '--surface2': '#bebebe',
+      '--overlay0': '#a0a0a0', '--overlay1': '#848484', '--overlay2': '#686868',
+      '--subtext0': '#4c4c4c', '--subtext1': '#282828', '--text': '#000000',
+      '--rosewater': '#b07868', '--flamingo': '#b06868', '--pink': '#a05080',
+      '--mauve': '#7040a8', '--red': '#b84040', '--maroon': '#a85858',
+      '--peach': '#b86828', '--yellow': '#8a7818', '--green': '#388030',
+      '--teal': '#207870', '--sky': '#208090', '--sapphire': '#206888',
+      '--blue': '#007acc', '--lavender': '#5850a8',
+    }
+  },
+
+  // ── Well-known theme pairs for reference ──
+  oneDark: {
+    label: 'One Dark',
+    type: 'Dark',
+    desc: 'Atom/VSCode popular dark',
+    vars: {
+      '--crust': '#1e2229', '--mantle': '#232830', '--base': '#282c34',
+      '--surface0': '#323842', '--surface1': '#3e4451', '--surface2': '#4b5263',
+      '--overlay0': '#5c6370', '--overlay1': '#727984', '--overlay2': '#8a909c',
+      '--subtext0': '#a3a9b4', '--subtext1': '#bdc3cd', '--text': '#abb2bf',
+      '--rosewater': '#e5c0b0', '--flamingo': '#dba8a8', '--pink': '#d59ac0',
+      '--mauve': '#c678dd', '--red': '#e06c75', '--maroon': '#d47a80',
+      '--peach': '#d19a66', '--yellow': '#e5c07b', '--green': '#98c379',
+      '--teal': '#56b6c2', '--sky': '#56b6c2', '--sapphire': '#519aba',
+      '--blue': '#61afef', '--lavender': '#8a8fd0',
+    }
+  },
+  oneLight: {
+    label: 'One Light',
+    type: 'Light',
+    desc: 'Atom/VSCode popular light',
+    vars: {
+      '--crust': '#fafafa', '--mantle': '#f0f0f1', '--base': '#e8e8eb',
+      '--surface0': '#dcdce0', '--surface1': '#ceced4', '--surface2': '#bcbcc4',
+      '--overlay0': '#a0a0aa', '--overlay1': '#868694', '--overlay2': '#6d6d7e',
+      '--subtext0': '#555568', '--subtext1': '#3a3a4a', '--text': '#21212b',
+      '--rosewater': '#b08878', '--flamingo': '#b07878', '--pink': '#a06088',
+      '--mauve': '#a626a4', '--red': '#e45649', '--maroon': '#c0625e',
+      '--peach': '#d75f00', '--yellow': '#b08820', '--green': '#50a14f',
+      '--teal': '#0184bc', '--sky': '#0184bc', '--sapphire': '#4078f2',
+      '--blue': '#4078f2', '--lavender': '#6a6fc0',
+    }
+  },
+  gitDark: {
+    label: 'GitHub Dark',
+    type: 'Dark',
+    desc: 'GitHub default dark',
+    vars: {
+      '--crust': '#0d1117', '--mantle': '#131820', '--base': '#181f2b',
+      '--surface0': '#212936', '--surface1': '#2d3548', '--surface2': '#3b4458',
+      '--overlay0': '#4e5870', '--overlay1': '#6b758f', '--overlay2': '#8792ab',
+      '--subtext0': '#a3adb7', '--subtext1': '#c5cdd8', '--text': '#e4e9f2',
+      '--rosewater': '#f0d5ce', '--flamingo': '#e8b0b5', '--pink': '#e5a8d6',
+      '--mauve': '#b994e5', '--red': '#e06b7b', '--maroon': '#ce7986',
+      '--peach': '#de946e', '--yellow': '#d4b06d', '--green': '#7fbd85',
+      '--teal': '#63c0b8', '--sky': '#6fc4d0', '--sapphire': '#65b3d0',
+      '--blue': '#74a3ee', '--lavender': '#9799e8',
+    }
+  },
+  gitLight: {
+    label: 'GitHub Light',
+    type: 'Light',
+    desc: 'GitHub default light',
+    vars: {
+      '--crust': '#ffffff', '--mantle': '#f6f8fa', '--base': '#edf0f4',
+      '--surface0': '#e1e4e9', '--surface1': '#d2d6de', '--surface2': '#c0c5cf',
+      '--overlay0': '#a3a9b6', '--overlay1': '#88909f', '--overlay2': '#6f7787',
+      '--subtext0': '#576071', '--subtext1': '#3b4355', '--text': '#1f242e',
+      '--rosewater': '#b08878', '--flamingo': '#b07878', '--pink': '#a06088',
+      '--mauve': '#8a48b0', '--red': '#cf222e', '--maroon': '#b85a5a',
+      '--peach': '#bc5c28', '--yellow': '#936e18', '--green': '#2d7d38',
+      '--teal': '#1b7c83', '--sky': '#1b7c83', '--sapphire': '#0969da',
+      '--blue': '#0969da', '--lavender': '#5555b0',
+    }
+  },
+  nord: {
+    label: 'Nord',
+    type: 'Dark',
+    desc: 'Calm frosty blue-gray',
+    vars: {
+      '--crust': '#242933', '--mantle': '#2b313d', '--base': '#323846',
+      '--surface0': '#3b4353', '--surface1': '#434c5e', '--surface2': '#4c566a',
+      '--overlay0': '#5e687b', '--overlay1': '#74809a', '--overlay2': '#8b98b5',
+      '--subtext0': '#a3b1cc', '--subtext1': '#bcc8db', '--text': '#d8dee9',
+      '--rosewater': '#e5c7be', '--flamingo': '#e0b0b5', '--pink': '#dba8c0',
+      '--mauve': '#b48ead', '--red': '#bf616a', '--maroon': '#c4727a',
+      '--peach': '#d08770', '--yellow': '#ebcb8b', '--green': '#a3be8c',
+      '--teal': '#88c0d0', '--sky': '#81a1c1', '--sapphire': '#5e81ac',
+      '--blue': '#81a1c1', '--lavender': '#8a8fc0',
+    }
+  },
+  tokyo: {
+    label: 'Tokyo Night',
+    type: 'Dark',
+    desc: 'Vibrant deep purple-blue',
+    vars: {
+      '--crust': '#0f0f1a', '--mantle': '#151523', '--base': '#1a1b2e',
+      '--surface0': '#24253e', '--surface1': '#2f3052', '--surface2': '#3c3e64',
+      '--overlay0': '#50537e', '--overlay1': '#686b96', '--overlay2': '#8285ae',
+      '--subtext0': '#9c9fc4', '--subtext1': '#b8bbd8', '--text': '#d5d8ee',
+      '--rosewater': '#e2cac8', '--flamingo': '#d8aeb4', '--pink': '#d09ec0',
+      '--mauve': '#bb9af7', '--red': '#f7768e', '--maroon': '#e08490',
+      '--peach': '#ff9e64', '--yellow': '#e0af68', '--green': '#9ece6a',
+      '--teal': '#73daca', '--sky': '#89ddff', '--sapphire': '#7dcfff',
+      '--blue': '#7aa2f7', '--lavender': '#9aa5f0',
+    }
+  },
+  // Catppuccin baselines for reference
+  mocha: {
+    label: 'Mocha',
+    type: 'Dark',
+    desc: 'Catppuccin Mocha (current)',
+    vars: {
+      '--crust': '#11111b', '--mantle': '#181825', '--base': '#1e1e2e',
+      '--surface0': '#313244', '--surface1': '#45475a', '--surface2': '#585b70',
+      '--overlay0': '#6c7086', '--overlay1': '#7f849c', '--overlay2': '#9399b2',
+      '--subtext0': '#a6adc8', '--subtext1': '#bac2de', '--text': '#cdd6f4',
+      '--rosewater': '#f5e0dc', '--flamingo': '#f2cdcd', '--pink': '#f5c2e7',
+      '--mauve': '#cba6f7', '--red': '#f38ba8', '--maroon': '#eba0ac',
+      '--peach': '#fab387', '--yellow': '#f9e2af', '--green': '#a6e3a1',
+      '--teal': '#94e2d5', '--sky': '#89dceb', '--sapphire': '#74c7ec',
+      '--blue': '#89b4fa', '--lavender': '#b4befe',
+    }
+  },
+  latte: {
+    label: 'Latte',
+    type: 'Light',
+    desc: 'Catppuccin Latte (current)',
+    vars: {
+      '--crust': '#dce0e8', '--mantle': '#e6e9ef', '--base': '#eff1f5',
+      '--surface0': '#ccd0da', '--surface1': '#bcc0cc', '--surface2': '#acb0be',
+      '--overlay0': '#9ca0b0', '--overlay1': '#8c8fa1', '--overlay2': '#7c7f93',
+      '--subtext0': '#6c6f85', '--subtext1': '#5c5f77', '--text': '#4c4f69',
+      '--rosewater': '#dc8a78', '--flamingo': '#dd7878', '--pink': '#ea76cb',
+      '--mauve': '#8839ef', '--red': '#d20f39', '--maroon': '#e64553',
+      '--peach': '#fe640b', '--yellow': '#df8e1d', '--green': '#40a02b',
+      '--teal': '#179299', '--sky': '#04a5e5', '--sapphire': '#209fb5',
+      '--blue': '#1e66f5', '--lavender': '#7287fd',
+    }
+  },
+}
+
+// ============================================================
+// Live preview — build preview bars for each scheme
+// ============================================================
+const KEYS = ['--crust','--mantle','--base','--surface0','--surface1','--surface2','--overlay0','--overlay1','--overlay2','--subtext0','--subtext1','--text','--blue','--green','--red','--yellow']
+
+function makePreview(scheme) {
+  return KEYS.map(k => `<span style="background:${scheme.vars[k]}"></span>`).join('')
+}
+
+// ============================================================
+// Apply a scheme to the document
+// ============================================================
+function applyScheme(id) {
+  const scheme = SCHEMES[id]
+  if (!scheme) return
+  const root = document.documentElement
+  for (const [key, val] of Object.entries(scheme.vars)) {
+    root.style.setProperty(key, val)
+  }
+  localStorage.setItem('color-test-scheme', id)
+  // update active card
+  document.querySelectorAll('.scheme-card').forEach(c => c.classList.toggle('active', c.dataset.id === id))
+}
+
+// ============================================================
+// Read saved scheme
+// ============================================================
+function getSavedScheme() {
+  const saved = localStorage.getItem('color-test-scheme')
+  if (saved && SCHEMES[saved]) return saved
+  return 'azureDark'
+}
+
+// ============================================================
+// Build picker
+// ============================================================
+const grid = document.getElementById('grid')
+for (const [id, scheme] of Object.entries(SCHEMES)) {
+  const card = document.createElement('div')
+  card.className = 'scheme-card'
+  card.dataset.id = id
+  card.innerHTML = `
+    <div class="scheme-preview">${makePreview(scheme)}</div>
+    <div class="scheme-name">${scheme.label}</div>
+    <div class="scheme-type">${scheme.type} · ${scheme.desc}</div>
+  `
+  card.addEventListener('click', () => { applyScheme(id) })
+  grid.appendChild(card)
+}
+
+// ============================================================
+// Apply initial scheme
+// ============================================================
+applyScheme(getSavedScheme())
+
+// ============================================================
+// Keyboard shortcut: Ctrl+Shift+C
+// ============================================================
+const overlay = document.getElementById('overlay')
+const closeOverlay = document.getElementById('closeOverlay')
+
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.shiftKey && e.code === 'KeyC') {
+    e.preventDefault()
+    overlay.classList.toggle('open')
+  }
+})
+
+overlay.addEventListener('click', e => {
+  if (e.target === overlay) overlay.classList.remove('open')
+})
+closeOverlay.addEventListener('click', () => overlay.classList.remove('open'))
+</script>
+</body>
+</html>

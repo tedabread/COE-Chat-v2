@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../hooks/useAuth'
@@ -28,7 +28,7 @@ import { signalAppReady } from '../appReady'
 
 export function Home() {
   const { user, signOut } = useAuth()
-  const { friends, loading: friendsLoading, removeFriend, refetch: refetchFriends } = useFriends(user?.id)
+  const { friends, requests, loading: friendsLoading, removeFriend, refetch: refetchFriends, refetchRequests, acceptRequest, rejectRequest } = useFriends(user?.id)
   const { servers, createServer, refetch: refetchServers } = useServers(user?.id)
   const [profile, setProfile] = useState<Profile | null>(null)
   const navigate = useNavigate()
@@ -58,9 +58,18 @@ export function Home() {
   const [serverMembers, setServerMembers] = useState<ServerMember[]>([])
   const showMemberSidebar = true
   const [resolvingChat, setResolvingChat] = useState(false)
+  const closingChatRef = useRef(false)
+
+  const userDisplayNames = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const sm of serverMembers) {
+      map[sm.user_id] = sm.profile?.display_name || sm.profile?.username || 'Unknown'
+    }
+    return map
+  }, [serverMembers])
 
   const call = useCall(user?.id, activeChatId ?? undefined, activeFriend?.id)
-  const { userStatuses } = usePresence(user?.id)
+  const { userStatuses, refreshStatuses } = usePresence(user?.id)
 
   // ── Real-time profile subscription ──────────────────────────
   useEffect(() => {
@@ -69,6 +78,8 @@ export function Home() {
       .channel('profile-updates')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=neq.${user.id}` },
         () => {
+          console.log('[profile-updates] Realtime event fired')
+          refreshStatuses()
           refetchFriends()
           if (activeServerId) fetchServerMembers(activeServerId).then(setServerMembers)
           if (activeFriend) {
@@ -85,14 +96,36 @@ export function Home() {
   // ── Real-time friend request changes ────────────────────────
   useEffect(() => {
     if (!user) return
-    const channel = supabase
-      .channel('friend-request-changes')
+
+    // Two subscriptions (incoming + outgoing) instead of `or()` filter
+    // which may not be supported by Realtime postgres_changes.
+    const incoming = supabase
+      .channel('friend-requests-incoming')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'friend_requests', filter: `receiver_id=eq.${user.id}` },
-        () => { refetchFriends() }
+        () => { refetchRequests(); refetchFriends() }
       )
       .subscribe()
-    return () => { supabase.removeChannel(channel) }
+
+    const outgoing = supabase
+      .channel('friend-requests-outgoing')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'friend_requests', filter: `sender_id=eq.${user.id}` },
+        () => { refetchRequests(); refetchFriends() }
+      )
+      .subscribe()
+
+    // Fallback poll every 5s in case Realtime doesn't fire
+    const poll = setInterval(() => {
+      refetchRequests()
+      refetchFriends()
+    }, 5_000)
+
+    return () => {
+      supabase.removeChannel(incoming)
+      supabase.removeChannel(outgoing)
+      clearInterval(poll)
+    }
   }, [user])
 
   // ── Real-time server membership changes ─────────────────────
@@ -151,7 +184,7 @@ export function Home() {
       return
     }
     const cid = Number(chatIdParam)
-    if (!cid || cid === activeChatId) {
+    if (!cid || cid === activeChatId || closingChatRef.current) {
       console.log('chatResolve: skipped — invalid cid or already active', { cid, activeChatId })
       return
     }
@@ -325,14 +358,12 @@ export function Home() {
   }
 
   function closeChat() {
+    closingChatRef.current = true
     setActiveChatId(null)
     setActiveFriendId(null)
     setActiveFriend(null)
-    if (activeServerId) {
-      navigate(`/server/${activeServerId}`, { replace: true })
-    } else {
-      navigate('/', { replace: true })
-    }
+    navigate('/', { replace: true })
+    setTimeout(() => { closingChatRef.current = false }, 0)
   }
 
   // ── Server actions ────────────────────────────────────────
@@ -506,7 +537,7 @@ export function Home() {
         <aside className="sidebar">
           <div className="sidebar-top">
             <FriendSearch userId={user?.id} />
-            <FriendRequests userId={user?.id} onFriendListChange={refetchFriends} />
+            <FriendRequests requests={requests} onAccept={acceptRequest} onReject={rejectRequest} />
 
             <div className="friend-list">
               <div className="list-header">
@@ -677,6 +708,7 @@ export function Home() {
             channel={activeChannel}
             onClose={() => { setActiveServerId(null); setActiveDm(true); navigate('/', { replace: true }) }}
             canManageMessages={canManageMessages}
+            userDisplayNames={userDisplayNames}
           />
         ) : !activeDm && !activeChannel && channels.length === 0 ? (
           <div className="empty-state">
@@ -737,6 +769,15 @@ export function Home() {
           onClose={() => setShowServerSettings(false)}
           onUpdate={() => {
             if (activeServerId) fetchServerChannels(activeServerId).then(setChannels)
+          }}
+          onLeave={() => {
+            setShowServerSettings(false)
+            setActiveServerId(null)
+            setActiveServer(null)
+            setActiveChannelId(null)
+            setActiveDm(true)
+            refetchServers()
+            navigate('/', { replace: true })
           }}
         />
       )}

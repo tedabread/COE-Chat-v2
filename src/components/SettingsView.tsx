@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../hooks/useAuth'
-import { useTheme, themes } from '../hooks/useTheme'
+import { useTheme, themes, accentPresets } from '../hooks/useTheme'
 import { loadFont, getFontFamily } from '../utils/fonts'
 import type { Profile } from '../types'
 import { Icon } from './Icon'
@@ -18,7 +18,7 @@ interface Props {
 
 export function SettingsView({ profile, onClose, onProfileUpdate }: Props) {
   const { user } = useAuth()
-  const { theme, setTheme } = useTheme()
+  const { theme, setTheme, accent, setAccent } = useTheme()
   const [tab, setTab] = useState<Tab>('account')
   const [creator, setCreator] = useState<Profile | null>(null)
 
@@ -503,9 +503,22 @@ export function SettingsView({ profile, onClose, onProfileUpdate }: Props) {
               />
               <div>
                 <div className="theme-name">{t.name}</div>
-                <div className="theme-desc">{t.description}</div>
+                {t.description && <div className="theme-desc">{t.description}</div>}
               </div>
             </label>
+          ))}
+        </div>
+
+        <h3 style={{ marginTop: '1rem' }}>Accent Colour</h3>
+        <div className="accent-options">
+          {accentPresets.map(p => (
+            <button
+              key={p.color}
+              className={`accent-swatch ${accent === p.color ? 'active' : ''}`}
+              style={{ background: p.color }}
+              title={p.name}
+              onClick={() => setAccent(p.color)}
+            />
           ))}
         </div>
       </div>

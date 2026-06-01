@@ -1,24 +1,14 @@
-import { useFriends } from '../hooks/useFriends'
+import type { PostgrestError } from '@supabase/supabase-js'
+import type { FriendRequest } from '../types'
 import { Icon } from './Icon'
 
 interface Props {
-  userId: string | undefined
-  onFriendListChange?: () => void
+  requests: FriendRequest[]
+  onAccept: (id: number) => Promise<{ error: null }>
+  onReject: (id: number) => Promise<{ error: PostgrestError | null }>
 }
 
-export function FriendRequests({ userId, onFriendListChange }: Props) {
-  const { requests, acceptRequest, rejectRequest } = useFriends(userId)
-
-  async function handleAccept(id: number) {
-    await acceptRequest(id)
-    onFriendListChange?.()
-  }
-
-  async function handleReject(id: number) {
-    await rejectRequest(id)
-    onFriendListChange?.()
-  }
-
+export function FriendRequests({ requests, onAccept, onReject }: Props) {
   if (requests.length === 0) return null
 
   return (
@@ -28,8 +18,8 @@ export function FriendRequests({ userId, onFriendListChange }: Props) {
         <div key={req.id} className="request-item">
           <span><Icon name="user" /> {req.sender?.display_name || req.sender?.username}</span>
           <div className="request-actions">
-            <button onClick={() => handleAccept(req.id)}><Icon name="check" /></button>
-            <button onClick={() => handleReject(req.id)}><Icon name="close" /></button>
+            <button onClick={() => onAccept(req.id)}><Icon name="check" /></button>
+            <button onClick={() => onReject(req.id)}><Icon name="close" /></button>
           </div>
         </div>
       ))}

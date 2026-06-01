@@ -173,7 +173,7 @@
   font-style: italic;
 }
 
-/* ========== Catppuccin Mocha (default) ========== */
+/* ========== Catppuccin Mocha ========== */
 :root {
   --rosewater: #f5e0dc;
   --flamingo: #f2cdcd;
@@ -291,6 +291,32 @@
   --base: #24273a;
   --mantle: #1e2030;
   --crust: #181926;
+}
+
+/* ========== Custom Light ========== */
+[data-theme="light"] {
+  --crust: #ebebeb; --mantle: #f5f5f5; --base: #ffffff;
+  --surface0: #dfdfdf; --surface1: #d0d0d0; --surface2: #bebebe;
+  --overlay0: #a0a0a0; --overlay1: #848484; --overlay2: #686868;
+  --subtext0: #4c4c4c; --subtext1: #282828; --text: #000000;
+  --rosewater: #d08878; --flamingo: #d07070; --pink: #c06098;
+  --mauve: #9058c8; --red: #d04848; --maroon: #b86868;
+  --peach: #d08038; --yellow: #ffbe42; --green: #489048;
+  --teal: #309088; --sky: #3098a8; --sapphire: #3080a0;
+  --blue: #007acc; --lavender: #6860c0;
+}
+
+/* ========== Custom Dark ========== */
+[data-theme="dark"] {
+  --crust: #101214; --mantle: #131618; --base: #171b1d;
+  --surface0: #1e2326; --surface1: #272d30; --surface2: #31383c;
+  --overlay0: #454d52; --overlay1: #5a646a; --overlay2: #707b82;
+  --subtext0: #87939b; --subtext1: #a0adb6; --text: #ffffff;
+  --rosewater: #e8c8c0; --flamingo: #dcaaaa; --pink: #d09abb;
+  --mauve: #b086d9; --red: #e05858; --maroon: #cc7878;
+  --peach: #d8945a; --yellow: #d4aa50; --green: #74b868;
+  --teal: #58b0a4; --sky: #5ebaca; --sapphire: #4ea0b8;
+  --blue: #007acc; --lavender: #8888d0;
 }
 
 * {
@@ -2428,6 +2454,33 @@ body {
 .theme-option .theme-desc {
   font-size: 0.75rem;
   color: var(--overlay0);
+}
+
+.accent-options {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.accent-swatch {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.accent-swatch:hover {
+  transform: scale(1.15);
+}
+
+.accent-swatch.active {
+  border-color: var(--text);
+  transform: scale(1.15);
 }
 
 /* ========== Profile card preview ========== */

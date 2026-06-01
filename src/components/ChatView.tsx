@@ -142,6 +142,28 @@ export function ChatView({ chatId, partner, onClose, groupName, callStatus, inco
     }
   }, [messages])
 
+  // Global keydown → focus input
+  useEffect(() => {
+    function handleGlobalKeyDown(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.key === 'Escape' || e.key === 'Enter' || e.key === 'Tab') return
+      if (e.key.length !== 1) return
+      e.preventDefault()
+      const el = inputRef.current
+      if (!el) return
+      el.focus()
+      const start = el.selectionStart ?? input.length
+      const newVal = input.slice(0, start) + e.key + input.slice(start)
+      setInput(newVal)
+      requestAnimationFrame(() => {
+        el.selectionStart = el.selectionEnd = start + e.key.length
+      })
+    }
+    document.addEventListener('keydown', handleGlobalKeyDown)
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [input])
+
   useEffect(() => {
     if (partner?.name_font) loadFont(partner.name_font)
   }, [partner])
