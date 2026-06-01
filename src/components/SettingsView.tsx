@@ -539,7 +539,6 @@ export function SettingsView({ profile, onClose, onProfileUpdate }: Props) {
         </p>
 
         <br></br>
-        <p>View the source code at <a>will go here later.</a></p>
 
         <div className="settings-section">
           <h3>Created by</h3>
