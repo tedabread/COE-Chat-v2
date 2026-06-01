@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../supabaseClient'
 import type { Profile, FriendRequest } from '../types'
 
@@ -6,6 +6,7 @@ export function useFriends(userId: string | undefined) {
   const [friends, setFriends] = useState<Profile[]>([])
   const [requests, setRequests] = useState<FriendRequest[]>([])
   const [loading, setLoading] = useState(true)
+  const fetchIdRef = useRef(0)
 
   useEffect(() => {
     if (!userId) return
@@ -14,6 +15,7 @@ export function useFriends(userId: string | undefined) {
   }, [userId])
 
   async function fetchFriends() {
+    const id = ++fetchIdRef.current
     const { data } = await supabase
       .from('friend_requests')
       .select('sender_id, receiver_id')
@@ -33,7 +35,11 @@ export function useFriends(userId: string | undefined) {
       .select('id, username, uid, avatar_url, display_name, name_font, name_color, banner_color, status, message_font, role, admin_outline_color, created_at')
       .in('id', friendIds)
 
-    setFriends(profiles ?? [])
+    if (id !== fetchIdRef.current) return
+    const sorted = (profiles ?? []).sort((a, b) =>
+      (a.display_name || a.username || '').localeCompare(b.display_name || b.username || '')
+    )
+    setFriends(sorted)
     setLoading(false)
   }
 

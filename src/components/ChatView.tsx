@@ -30,6 +30,7 @@ interface Props {
   acceptCall: () => void
   declineCall: () => void
   endCall: () => void
+  onMarkRead?: (chatId: number) => void
 }
 
 const FLAG_RE = /:flag-([a-z0-9-]+):/g
@@ -108,7 +109,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
 }
 
-export function ChatView({ chatId, partner, onClose, groupName, callStatus, incomingCallerId, elapsed, startCall, acceptCall, declineCall, endCall }: Props) {
+export function ChatView({ chatId, partner, onClose, groupName, callStatus, incomingCallerId, elapsed, startCall, acceptCall, declineCall, endCall, onMarkRead }: Props) {
   const { messages, loading, sendMessage } = useMessages(chatId)
   const [input, setInput] = useState('')
   const [showEmoji, setShowEmoji] = useState(false)
@@ -123,6 +124,10 @@ export function ChatView({ chatId, partner, onClose, groupName, callStatus, inco
   const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined)
 
   const { typingUserIds, setTyping } = useTyping(chatId, currentUserId)
+
+  useEffect(() => {
+    onMarkRead?.(chatId)
+  }, [chatId])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {

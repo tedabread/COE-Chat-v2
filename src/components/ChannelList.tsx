@@ -10,9 +10,11 @@ interface Props {
   onJoinVoice: (channel: Channel) => void
   activeVoiceChannelId: number | null
   onSettings?: () => void
+  unreadCounts?: Record<number, number>
+  pageHidden?: boolean
 }
 
-export function ChannelList({ channels, activeChannelId, onSelectChannel, serverName, voiceParticipants, onJoinVoice, activeVoiceChannelId, onSettings }: Props) {
+export function ChannelList({ channels, activeChannelId, onSelectChannel, serverName, voiceParticipants, onJoinVoice, activeVoiceChannelId, onSettings, unreadCounts, pageHidden }: Props) {
   const textChannels = channels.filter(c => c.type === 'text')
   const voiceChannels = channels.filter(c => c.type === 'voice')
 
@@ -31,6 +33,7 @@ export function ChannelList({ channels, activeChannelId, onSelectChannel, server
         </div>
       )
     }
+    const unread = unreadCounts?.[ch.id] ?? 0
     return (
       <div
         className={`channel-item ${activeChannelId === ch.id ? 'active' : ''}`}
@@ -38,6 +41,13 @@ export function ChannelList({ channels, activeChannelId, onSelectChannel, server
       >
         <span className="channel-hash">#</span>
         <span className="channel-name">{ch.name}</span>
+        {unread > 0 && (activeChannelId !== ch.id || pageHidden) && (
+          <span
+            className="unread-badge"
+            onClick={(e) => { e.stopPropagation(); onSelectChannel(ch) }}
+            title="Mark as read"
+          >{unread}</span>
+        )}
       </div>
     )
   }

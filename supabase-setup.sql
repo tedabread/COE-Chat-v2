@@ -594,3 +594,99 @@ BEGIN
   END IF;
 END;
 $$;
+
+-- ============================================================
+-- UNREAD MESSAGES — last_read_at tracking
+-- Remove everything from here to "END UNREAD" to disable
+-- ============================================================
+
+-- Add last_read_at to existing chat_members
+ALTER TABLE chat_members ADD COLUMN IF NOT EXISTS last_read_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Create channel read state table
+CREATE TABLE IF NOT EXISTS channel_last_read (
+  user_id    UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  channel_id INT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  last_read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, channel_id)
+);
+
+ALTER TABLE channel_last_read ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can manage their channel_last_read" ON channel_last_read;
+CREATE POLICY "Users can manage their channel_last_read" ON channel_last_read
+  FOR ALL USING (user_id = auth.uid());
+
+-- Add messages to the publication for real-time unread updates
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE messages;
+EXCEPTION WHEN duplicate_object THEN
+  NULL;
+END;
+$$;
+
+-- RPC: get DM chat info + unread counts
+CREATE OR REPLACE FUNCTION get_user_chat_info(p_user_id UUID)
+RETURNS TABLE(chat_id INT, other_user_id UUID, unread_count BIGINT)
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    (array_agg(cm1.chat_id ORDER BY (SELECT max(created_at) FROM messages WHERE chat_id = cm1.chat_id) DESC NULLS LAST))[1] as chat_id,
+    cm2.user_id,
+    COALESCE(SUM(
+      (SELECT COUNT(*) FROM messages m
+       WHERE m.chat_id = cm1.chat_id
+         AND m.sender_id != p_user_id
+         AND m.created_at > COALESCE(cm1.last_read_at, '1970-01-01'))
+    ), 0)::bigint as unread_count
+  FROM chat_members cm1
+  JOIN chat_members cm2 ON cm1.chat_id = cm2.chat_id AND cm2.user_id != p_user_id
+  WHERE cm1.user_id = p_user_id
+  GROUP BY cm2.user_id
+$$;
+
+-- RPC: get unread counts for all channels the user can see
+CREATE OR REPLACE FUNCTION get_all_channel_unreads(p_user_id UUID)
+RETURNS TABLE(channel_id INT, unread_count BIGINT)
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT c.id,
+    (SELECT COUNT(*) FROM messages m
+     WHERE m.channel_id = c.id
+       AND m.sender_id != p_user_id
+       AND m.created_at > COALESCE(clr.last_read_at, '1970-01-01'))
+  FROM channels c
+  JOIN server_members sm ON sm.server_id = c.server_id AND sm.user_id = p_user_id
+  LEFT JOIN channel_last_read clr ON clr.channel_id = c.id AND clr.user_id = p_user_id
+$$;
+
+-- RPC: mark a DM chat as read
+CREATE OR REPLACE FUNCTION mark_chat_read(p_chat_id INT, p_user_id UUID)
+RETURNS void
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  UPDATE chat_members SET last_read_at = NOW()
+  WHERE chat_id = p_chat_id AND user_id = p_user_id
+$$;
+
+-- RPC: mark a channel as read
+CREATE OR REPLACE FUNCTION mark_channel_read(p_channel_id INT, p_user_id UUID)
+RETURNS void
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  INSERT INTO channel_last_read (user_id, channel_id, last_read_at)
+  VALUES (p_user_id, p_channel_id, NOW())
+  ON CONFLICT (user_id, channel_id) DO UPDATE SET last_read_at = NOW()
+$$;
+-- END UNREAD MESSAGES --

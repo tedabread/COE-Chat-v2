@@ -7,6 +7,7 @@ import { useServers, fetchServerChannels, fetchServerMembers } from '../hooks/us
 import { useCall } from '../hooks/useCall'
 import { useVoiceChannel } from '../hooks/useVoiceChannel'
 import { usePresence } from '../hooks/usePresence'
+import { useUnread } from '../hooks/useUnread'
 import { getAvatarColor } from '../utils/avatar'
 import { getFontFamily, loadFont } from '../utils/fonts'
 import type { Profile, Server, Channel, ServerMember } from '../types'
@@ -59,6 +60,8 @@ export function Home() {
   const showMemberSidebar = true
   const [resolvingChat, setResolvingChat] = useState(false)
   const closingChatRef = useRef(false)
+  const [pageHidden, setPageHidden] = useState(false)
+  const originalTitleRef = useRef(document.title)
 
   const userDisplayNames = useMemo(() => {
     const map: Record<string, string> = {}
@@ -70,6 +73,7 @@ export function Home() {
 
   const call = useCall(user?.id, activeChatId ?? undefined, activeFriend?.id)
   const { userStatuses, refreshStatuses } = usePresence(user?.id)
+  const { dmUnreads, channelUnreads, chatIdForFriend, markChatRead, markChannelRead } = useUnread(user?.id)
 
   // ── Real-time profile subscription ──────────────────────────
   useEffect(() => {
@@ -334,6 +338,38 @@ export function Home() {
     }
   }, [friends])
 
+  // ── Page visibility ──────────────────────────────────────
+
+  useEffect(() => {
+    function handleVisibility() {
+      setPageHidden(document.visibilityState === 'hidden')
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
+
+  // ── Document title for unread count ──────────────────────
+
+  const totalUnreads = useMemo(() => {
+    let total = 0
+    for (const f of friends) {
+      total += dmUnreads[f.id] || 0
+    }
+    for (const ch of channels) {
+      total += channelUnreads[ch.id] || 0
+    }
+    return total
+  }, [dmUnreads, channelUnreads, friends, channels])
+
+  useEffect(() => {
+    if (totalUnreads > 0) {
+      document.title = `${totalUnreads} unread messages`
+    } else {
+      document.title = originalTitleRef.current
+    }
+    return () => { document.title = originalTitleRef.current }
+  }, [totalUnreads])
+
   // ── DM actions ────────────────────────────────────────────
 
   async function openDm(friend: Profile) {
@@ -571,6 +607,17 @@ export function Home() {
                       {f.display_name || f.username}
                       <AdminBadge role={f.role} />
                     </span>
+                    {dmUnreads[f.id] > 0 && (activeFriendId !== f.id || pageHidden) && (
+                      <span
+                        className="unread-badge"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          const cid = chatIdForFriend[f.id]
+                          if (cid) markChatRead(cid)
+                        }}
+                        title="Mark as read"
+                      >{dmUnreads[f.id]}</span>
+                    )}
                     <span className="uid">#{f.uid}</span>
                     <div className="friend-list-right">
                       <button
@@ -640,6 +687,8 @@ export function Home() {
             onJoinVoice={selectVoiceChannel}
             activeVoiceChannelId={voice.activeChannelId}
             onSettings={() => setShowServerSettings(true)}
+            unreadCounts={channelUnreads}
+            pageHidden={pageHidden}
           />
           <div className="sidebar-user">
             <div className="sidebar-user-avatar-wrap">
@@ -702,6 +751,7 @@ export function Home() {
             acceptCall={call.acceptCall}
             declineCall={call.declineCall}
             endCall={call.endCall}
+            onMarkRead={markChatRead}
           />
         ) : !activeDm && activeChannel ? (
           <ChannelView
@@ -709,6 +759,7 @@ export function Home() {
             onClose={() => { setActiveServerId(null); setActiveDm(true); navigate('/', { replace: true }) }}
             canManageMessages={canManageMessages}
             userDisplayNames={userDisplayNames}
+            onMarkRead={markChannelRead}
           />
         ) : !activeDm && !activeChannel && channels.length === 0 ? (
           <div className="empty-state">

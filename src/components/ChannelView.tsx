@@ -22,6 +22,7 @@ interface Props {
   onClose: () => void
   canManageMessages: boolean
   userDisplayNames?: Record<string, string>
+  onMarkRead?: (channelId: number) => void
 }
 
 const FLAG_RE = /:flag-([a-z0-9-]+):/g
@@ -97,7 +98,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
 }
 
-export function ChannelView({ channel, onClose, canManageMessages, userDisplayNames }: Props) {
+export function ChannelView({ channel, onClose, canManageMessages, userDisplayNames, onMarkRead }: Props) {
   const { messages, loading, sendMessage, editMessage, deleteMessage } = useChannelMessages(channel.id)
   const [input, setInput] = useState('')
   const [showEmoji, setShowEmoji] = useState(false)
@@ -114,6 +115,10 @@ export function ChannelView({ channel, onClose, canManageMessages, userDisplayNa
   const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined)
 
   const { typingUserIds, setTyping } = useTyping(channel.id, currentUserId, 'chan')
+
+  useEffect(() => {
+    onMarkRead?.(channel.id)
+  }, [channel.id])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {

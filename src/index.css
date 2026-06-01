@@ -897,18 +897,21 @@ body {
 }
 
 .unread-badge {
-  background: var(--rosewater);
-  color: var(--base);
-  font-size: 0.65rem;
-  font-weight: 700;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--red);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-family: inherit;
   line-height: 1;
+  flex-shrink: 0;
+  text-shadow: none;
 }
 
 .friend-list-name {
@@ -3871,4 +3874,8 @@ body {
 
 .msg-row {
   transition: opacity 0.15s;
+}
+
+.channel-item .unread-badge {
+  margin-left: auto;
 }
